@@ -1,0 +1,120 @@
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.dayLabel,
+                      (!cell.inCurrentMonth || !isMarked) && styles.dayLabelMuted,
+                    ]}
+                  >
+                    {cell.inCurrentMonth ? formatDayNumber(cell.date) : ' '}
+                  </Text>
+                </View>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+
+      {loading ? (
+        <ActivityIndicator color={PRIMARY} style={{ marginTop: 24 }} />
+      ) : (
+        <Text style={styles.helper}>
+          Selecciona una fecha marcada para ver los desafíos completados ese día.
+        </Text>
+      )}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 24,
+    paddingTop: 32,
+  },
+  title: {
+    fontSize: 28,
+    fontFamily: 'PlusJakartaSans-Bold',
+    color: '#282828',
+    marginBottom: 8,
+  },
+  subtitle: {
+    fontSize: 16,
+    fontFamily: 'PlusJakartaSans-Regular',
+    color: '#6E6E6E',
+    marginBottom: 24,
+  },
+  calendarCard: {
+    backgroundColor: '#F5FAFA',
+    borderRadius: 24,
+    padding: 16,
+    elevation: 2,
+  },
+  monthHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  monthButton: {
+    padding: 6,
+  },
+  monthLabel: {
+    fontSize: 18,
+    fontFamily: 'PlusJakartaSans-Bold',
+    color: '#1F2933',
+  },
+  weekRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+    paddingHorizontal: 4,
+  },
+  weekdayLabel: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 13,
+    fontFamily: 'PlusJakartaSans-Medium',
+    color: '#6E6E6E',
+  },
+  daysGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  dayWrapper: {
+    width: `${100 / 7}%`,
+    paddingVertical: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dayCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  dayCircleActive: {
+    backgroundColor: PRIMARY,
+  },
+  dayCircleInactive: {
+    borderRadius: 18,
+  },
+  dayLabel: {
+    fontSize: 14,
+    fontFamily: 'PlusJakartaSans-Medium',
+    color: '#FFFFFF',
+  },
+  dayLabelMuted: {
+    color: '#9AA5B1',
+  },
+  helper: {
+    marginTop: 24,
+    fontSize: 15,
+    fontFamily: 'PlusJakartaSans-Regular',
+    color: '#4B5A66',
+    textAlign: 'center',
+  },
+});

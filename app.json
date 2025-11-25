@@ -19,7 +19,20 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.marianaotondo.disconnect",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "category": ["BROWSABLE", "DEFAULT"],
+          "data": [
+            {
+              "scheme": "com.googleusercontent.apps.275539843435-csvcvs4n76tph4m2o0nrdikhhhi0fm2f",
+              "pathPrefix": "/oauth2redirect"
+            }
+          ]
+        }
+      ]
     },
     "web": {
       "output": "static",
@@ -43,6 +56,24 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "firebase": {
+        "apiKey": "AIzaSyBJqfh4ZXjZxHV588vJI97n80ULN8LzYpk",
+        "authDomain": "disconnect-ff073.firebaseapp.com",
+        "projectId": "disconnect-ff073",
+        "databaseURL": "https://disconnect-ff073-default-rtdb.firebaseio.com",
+        "storageBucket": "disconnect-ff073.firebasestorage.app",
+        "messagingSenderId": "275539843435",
+        "appId": "1:275539843435:web:708d29e8dc5ae51cb1942e"
+      },
+      "googleAuth": {
+        "androidClientId": "275539843435-csvcvs4n76tph4m2o0nrdikhhhi0fm2f.apps.googleusercontent.com",
+        "webClientId": "275539843435-ecv694leuc2s6nhe7je4b6285ebil0ku.apps.googleusercontent.com"
+      }
     }
   }
 }

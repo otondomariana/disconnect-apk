@@ -1,3 +1,12 @@
+import { Ionicons } from '@expo/vector-icons';
+import { makeRedirectUri } from 'expo-auth-session';
+import type { GoogleAuthRequestConfig } from 'expo-auth-session/providers/google';
+import * as Google from 'expo-auth-session/providers/google';
+import Constants from 'expo-constants';
+import { router } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
+import { GoogleAuthProvider, fetchSignInMethodsForEmail, signInWithCredential } from 'firebase/auth';
+import { collection, getDocs, limit, query, where } from 'firebase/firestore';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -11,15 +20,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
-import * as WebBrowser from 'expo-web-browser';
-import * as Google from 'expo-auth-session/providers/google';
-import type { GoogleAuthRequestConfig } from 'expo-auth-session/providers/google';
-import { makeRedirectUri } from 'expo-auth-session';
-import Constants from 'expo-constants';
-import { GoogleAuthProvider, fetchSignInMethodsForEmail, signInWithCredential } from 'firebase/auth';
-import { collection, getDocs, limit, query, where } from 'firebase/firestore';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { auth, db } from '@/lib/firebase';
 
@@ -42,6 +43,7 @@ export default function RegisterScreen() {
   const [loading, setLoading] = useState(false);
   const [checkingEmail, setCheckingEmail] = useState(false);
   const [formError, setFormError] = useState('');
+  const insets = useSafeAreaInsets();
 
   const extra = (Constants.expoConfig?.extra as Extra | undefined) ?? {};
   const googleIds = (extra.googleAuth ?? {}) as {
@@ -103,12 +105,12 @@ export default function RegisterScreen() {
 
   const googleConfig = useMemo(
     () =>
-      ({
-        clientId,
-        redirectUri,
-        scopes: ['openid', 'profile', 'email'],
-        useProxy: false,
-      } as any as Partial<GoogleAuthRequestConfig>),
+    ({
+      clientId,
+      redirectUri,
+      scopes: ['openid', 'profile', 'email'],
+      useProxy: false,
+    } as any as Partial<GoogleAuthRequestConfig>),
     [clientId, redirectUri]
   );
 
@@ -207,93 +209,109 @@ export default function RegisterScreen() {
   }, [confirmation, email, password, router]);
 
   return (
-    <KeyboardAvoidingView behavior={Platform.select({ ios: 'padding', android: undefined })} style={{ flex: 1 }}>
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        <View style={styles.header}>
-          <Pressable accessibilityLabel="Volver" onPress={() => router.back()} style={styles.backButton}>
-            <Ionicons color={PRIMARY} name="arrow-back" size={24} />
+    <View style={[styles.safeArea, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+      <View style={styles.header}>
+        <Pressable accessibilityLabel="Volver" onPress={() => router.back()} style={styles.backButton}>
+          <Ionicons name="chevron-back" size={24} color="#282828" />
+        </Pressable>
+        <Text style={styles.headerTitle}>Crear cuenta</Text>
+        <View style={styles.headerRight} />
+      </View>
+
+      <KeyboardAvoidingView behavior={Platform.select({ ios: 'padding', android: undefined })} style={{ flex: 1 }}>
+        <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+
+          <Pressable
+            disabled={!hasGoogleClient || !request || loading}
+            onPress={handleGoogle}
+            style={[styles.googleButton, loading && styles.disabledButton]}
+          >
+            <Image
+              accessibilityIgnoresInvertColors
+              source={require('../../assets/images/google-logo.png')}
+              style={styles.googleLogo}
+            />
+            <Text style={styles.googleLabel}>Continuar con Google</Text>
           </Pressable>
-          <Text style={styles.title}>Crear cuenta</Text>
-        </View>
 
-        <Pressable
-          disabled={!hasGoogleClient || !request || loading}
-          onPress={handleGoogle}
-          style={[styles.googleButton, loading && styles.disabledButton]}
-        >
-          <Image
-            accessibilityIgnoresInvertColors
-            source={require('../assets/images/google-logo.png')}
-            style={styles.googleLogo}
+          <Text style={styles.dividerText}>O regístrate con correo electrónico</Text>
+
+          <TextInput
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="email-address"
+            onChangeText={setEmail}
+            placeholder="Correo electrónico"
+            placeholderTextColor="#9B9B9B"
+            style={styles.input}
+            value={email}
           />
-          <Text style={styles.googleLabel}>Continuar con Google</Text>
-        </Pressable>
+          <TextInput
+            onChangeText={setPassword}
+            placeholder="Contraseña"
+            placeholderTextColor="#9B9B9B"
+            secureTextEntry
+            style={styles.input}
+            value={password}
+          />
+          <TextInput
+            onChangeText={setConfirmation}
+            placeholder="Repite la contraseña"
+            placeholderTextColor="#9B9B9B"
+            secureTextEntry
+            style={styles.input}
+            value={confirmation}
+          />
 
-        <Text style={styles.dividerText}>O regístrate con correo electrónico</Text>
+          {formError ? <Text style={styles.errorText}>{formError}</Text> : null}
 
-        <TextInput
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType="email-address"
-          onChangeText={setEmail}
-          placeholder="Correo electrónico"
-          placeholderTextColor="#9B9B9B"
-          style={styles.input}
-          value={email}
-        />
-        <TextInput
-          onChangeText={setPassword}
-          placeholder="Contraseña"
-          placeholderTextColor="#9B9B9B"
-          secureTextEntry
-          style={styles.input}
-          value={password}
-        />
-        <TextInput
-          onChangeText={setConfirmation}
-          placeholder="Repite la contraseña"
-          placeholderTextColor="#9B9B9B"
-          secureTextEntry
-          style={styles.input}
-          value={confirmation}
-        />
-
-        {formError ? <Text style={styles.errorText}>{formError}</Text> : null}
-
-        <Pressable
-          disabled={checkingEmail}
-          onPress={handleEmailContinue}
-          style={[styles.primaryButton, checkingEmail && styles.disabledButton]}
-        >
-          <Text style={styles.primaryLabel}>Crear cuenta</Text>
-        </Pressable>
-      </ScrollView>
-    </KeyboardAvoidingView>
+          <Pressable
+            disabled={checkingEmail}
+            onPress={handleEmailContinue}
+            style={[styles.primaryButton, checkingEmail && styles.disabledButton]}
+          >
+            <Text style={styles.primaryLabel}>Crear cuenta</Text>
+          </Pressable>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F5F5',
+    marginBottom: 8,
+  },
+  backButton: {
+    padding: 8,
+    marginLeft: -8,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontFamily: 'PlusJakartaSans-Bold',
+    color: '#282828',
+  },
+  headerRight: {
+    width: 40
+  },
   container: {
     flexGrow: 1,
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 24,
-    paddingTop: 20,
+    paddingTop: 24,
     paddingBottom: 32,
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  backButton: {
-    alignSelf: 'flex-start',
-    padding: 4,
-    borderRadius: 999,
-  },
-  title: {
-    fontFamily: 'PlusJakartaSans-Bold',
-    fontSize: 28,
-    color: PRIMARY,
-    marginTop: 8,
   },
   googleButton: {
     flexDirection: 'row',

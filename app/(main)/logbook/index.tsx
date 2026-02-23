@@ -3,6 +3,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
   buildDateKeyFromParts,
@@ -83,6 +84,7 @@ export default function LogbookScreen() {
   const [completions, setCompletions] = useState<CompletionMap>({});
   const [loading, setLoading] = useState(false);
   const [refreshFlag, setRefreshFlag] = useState(0);
+  const [currentStreak, setCurrentStreak] = useState(0);
 
   const loadSessions = useCallback(async () => {
     if (!user?.uid) return;
@@ -103,6 +105,46 @@ export default function LogbookScreen() {
         map[key] = (map[key] ?? 0) + 1;
       });
       setCompletions(map);
+
+      // Calcular racha
+      const days = Object.keys(map);
+      let streak = 0;
+      const sortedDays = days.sort((a, b) => b.localeCompare(a));
+      if (sortedDays.length > 0) {
+        const today = new Date();
+        const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+
+        let checkStr = todayStr;
+        if (sortedDays[0] === todayStr) {
+          streak = 1;
+        } else if (sortedDays[0] === yesterdayStr) {
+          streak = 1;
+          checkStr = yesterdayStr;
+        } else {
+          streak = 0;
+        }
+
+        if (streak > 0) {
+          for (let i = 1; i < sortedDays.length; i++) {
+            const prevDate = new Date(`${checkStr}T00:00:00`);
+            prevDate.setDate(prevDate.getDate() - 1);
+            const prevStr = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}-${String(prevDate.getDate()).padStart(2, '0')}`;
+
+            if (sortedDays[i] === prevStr) {
+              streak++;
+              checkStr = prevStr;
+            } else {
+              break;
+            }
+          }
+        }
+      }
+      setCurrentStreak(streak);
+
     } catch (error) {
       console.error('[Logbook] No fue posible cargar las sesiones completadas.', error);
     } finally {
@@ -145,69 +187,82 @@ export default function LogbookScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Bitácora</Text>
-      <Text style={styles.subtitle}>Mira de un vistazo tus desafios completados.</Text>
+    <SafeAreaView style={styles.container}>
+      <View style={styles.content}>
+        <Text style={styles.title}>Bitácora</Text>
+        <Text style={styles.subtitle}>Mira de un vistazo tus desafios completados.</Text>
 
-      <View style={styles.calendarCard}>
-        <View style={styles.monthHeader}>
-          <Pressable style={styles.monthButton} onPress={() => handleChangeMonth(-1)}>
-            <Ionicons name="chevron-back" size={20} color={PRIMARY} />
-          </Pressable>
-          <Text style={styles.monthLabel}>{monthLabel}</Text>
-          <Pressable style={styles.monthButton} onPress={() => handleChangeMonth(1)}>
-            <Ionicons name="chevron-forward" size={20} color={PRIMARY} />
-          </Pressable>
-        </View>
+        <View style={styles.calendarCard}>
+          <View style={styles.monthHeader}>
+            <Pressable style={styles.monthButton} onPress={() => handleChangeMonth(-1)}>
+              <Ionicons name="chevron-back" size={20} color={PRIMARY} />
+            </Pressable>
+            <Text style={styles.monthLabel}>{monthLabel}</Text>
+            <Pressable style={styles.monthButton} onPress={() => handleChangeMonth(1)}>
+              <Ionicons name="chevron-forward" size={20} color={PRIMARY} />
+            </Pressable>
+          </View>
 
-        <View style={styles.weekRow}>
-          {WEEKDAY_LABELS.map((label, index) => (
-            <Text key={`${label}-${index}`} style={styles.weekdayLabel}>
-              {label}
-            </Text>
-          ))}
-        </View>
+          <View style={styles.weekRow}>
+            {WEEKDAY_LABELS.map((label, index) => (
+              <Text key={`${label}-${index}`} style={styles.weekdayLabel}>
+                {label}
+              </Text>
+            ))}
+          </View>
 
-        <View style={styles.daysGrid}>
-          {calendarCells.map((cell) => {
-            const isMarked = cell.inCurrentMonth && cell.dateKey && Boolean(completions[cell.dateKey]);
-            return (
-              <Pressable
-                key={cell.key}
-                style={styles.dayWrapper}
-                onPress={() => handleSelectDate(cell)}
-                disabled={!cell.inCurrentMonth || !isMarked}
-                android_ripple={{ color: 'rgba(3, 158, 162, 0.15)', borderless: true, radius: 20 }}
-              >
-                <View
-                  style={[
-                    styles.dayCircle,
-                    isMarked ? styles.dayCircleActive : styles.dayCircleInactive,
-                  ]}
+          <View style={styles.daysGrid}>
+            {calendarCells.map((cell) => {
+              const isMarked = cell.inCurrentMonth && cell.dateKey && Boolean(completions[cell.dateKey]);
+              return (
+                <Pressable
+                  key={cell.key}
+                  style={styles.dayWrapper}
+                  onPress={() => handleSelectDate(cell)}
+                  disabled={!cell.inCurrentMonth || !isMarked}
+                  android_ripple={{ color: 'rgba(3, 158, 162, 0.15)', borderless: true, radius: 20 }}
                 >
-                  <Text
+                  <View
                     style={[
-                      styles.dayLabel,
-                      (!cell.inCurrentMonth || !isMarked) && styles.dayLabelMuted,
+                      styles.dayCircle,
+                      isMarked ? styles.dayCircleActive : styles.dayCircleInactive,
                     ]}
                   >
-                    {cell.inCurrentMonth ? String(cell.day) : ' '}
-                  </Text>
-                </View>
-              </Pressable>
-            );
-          })}
+                    <Text
+                      style={[
+                        styles.dayLabel,
+                        (!cell.inCurrentMonth || !isMarked) && styles.dayLabelMuted,
+                      ]}
+                    >
+                      {cell.inCurrentMonth ? String(cell.day) : ' '}
+                    </Text>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
         </View>
-      </View>
 
-      {loading ? (
-        <ActivityIndicator color={PRIMARY} style={{ marginTop: 24 }} />
-      ) : (
-        <Text style={styles.helper}>
-          Selecciona una fecha marcada para ver los desafios completados ese dia.
-        </Text>
-      )}
-    </View>
+        {loading ? (
+          <ActivityIndicator color={PRIMARY} style={{ marginTop: 24 }} />
+        ) : (
+          <>
+            <Text style={styles.helper}>
+              Selecciona una fecha marcada para ver los desafios completados ese dia.
+            </Text>
+            <View style={styles.streakContainer}>
+              <View style={styles.streakIconContainer}>
+                <Ionicons name="flame" size={24} color="#FF9800" />
+              </View>
+              <View style={styles.streakTextContainer}>
+                <Text style={styles.streakValue}>{currentStreak} {currentStreak === 1 ? 'd\u00eda' : 'd\u00edas'}</Text>
+                <Text style={styles.streakLabel}>Racha actual</Text>
+              </View>
+            </View>
+          </>
+        )}
+      </View>
+    </SafeAreaView>
   );
 }
 
@@ -215,8 +270,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  content: {
+    flex: 1,
     paddingHorizontal: 24,
-    paddingTop: 32,
+    paddingTop: 16,
   },
   title: {
     fontSize: 28,
@@ -301,5 +359,37 @@ const styles = StyleSheet.create({
     fontFamily: 'PlusJakartaSans-Regular',
     color: '#4B5A66',
     textAlign: 'center',
+    marginBottom: 24,
+  },
+  streakContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF0E6', // Fondo naranja muy clarito para la racha
+    padding: 16,
+    borderRadius: 20,
+    alignSelf: 'center',
+    width: '100%',
+  },
+  streakIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#FFE0CC',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 16,
+  },
+  streakTextContainer: {
+    flex: 1,
+  },
+  streakValue: {
+    fontSize: 20,
+    fontFamily: 'PlusJakartaSans-Bold',
+    color: '#E65100', // Naranja oscuro 
+  },
+  streakLabel: {
+    fontSize: 14,
+    fontFamily: 'PlusJakartaSans-Medium',
+    color: '#F57C00', // Naranja medio
   },
 });

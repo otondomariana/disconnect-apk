@@ -131,12 +131,18 @@ export default function ReflectionScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      {/* Header */}
+      <View style={styles.header}>
         <Pressable style={styles.backButton} onPress={handleGoBack}>
-          <Ionicons name="chevron-back" size={22} color={PRIMARY} />
-          <Text style={styles.backLabel}>Volver</Text>
+          <Ionicons name="chevron-back" size={24} color="#282828" />
         </Pressable>
+        <Text style={styles.headerTitle} numberOfLines={1}>
+          Escribe una reflexión
+        </Text>
+        <View style={styles.headerRight} />
+      </View>
 
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>{challengeTitle}</Text>
         {Boolean(challengeInstructions) && (
           <Text style={styles.subtitle}>{challengeInstructions}</Text>
@@ -194,12 +200,6 @@ export default function ReflectionScreen() {
             {saving ? 'Guardando reflexión...' : 'Guardar reflexión'}
           </Text>
         </Pressable>
-
-        <Pressable style={styles.linkButton} onPress={handleGoBack}>
-          <Text style={styles.linkLabel}>
-            {origin === 'logbook' ? 'Volver a Bitácora' : 'Volver al Inicio'}
-          </Text>
-        </Pressable>
       </ScrollView>
     </SafeAreaView>
   );
@@ -209,25 +209,37 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 24,
   },
-  content: {
-    paddingBottom: 48,
-  },
-  backButton: {
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
-    marginBottom: 12,
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F5F5',
   },
-  backLabel: {
-    marginLeft: 4,
-    color: PRIMARY,
-    fontFamily: 'PlusJakartaSans-Medium',
-    fontSize: 16,
+  backButton: {
+    padding: 8,
+    marginLeft: -8,
+  },
+  headerTitle: {
+    flex: 1,
+    fontSize: 20,
+    fontFamily: 'PlusJakartaSans-Bold',
+    color: '#282828',
+    textAlign: 'center',
+    marginHorizontal: 16,
+  },
+  headerRight: { width: 40 },
+  content: {
+    paddingHorizontal: 24,
+    paddingTop: 24,
+    paddingBottom: 48,
   },
   title: {
-    fontSize: 28,
+    fontSize: 24,
     fontFamily: 'PlusJakartaSans-Bold',
     color: '#039EA2',
     textAlign: 'center',
@@ -238,7 +250,7 @@ const styles = StyleSheet.create({
     fontFamily: 'PlusJakartaSans-Regular',
     color: '#1F2933',
     textAlign: 'center',
-    marginBottom: 16,
+    marginBottom: 20,
   },
   inputWrapper: {
     borderWidth: 1,

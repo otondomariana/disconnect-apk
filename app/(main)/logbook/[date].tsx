@@ -10,8 +10,9 @@ import {
   Text,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { formatDateKey, formatLongDate, parseDateKey, formatTime, fromFirestoreDate } from '@/lib/date';
+import { formatDateKey, formatLongDate, fromFirestoreDate, parseDateKey } from '@/lib/date';
 import { db } from '@/lib/firebase';
 import { useAuthStore } from '@/stores/auth';
 
@@ -125,13 +126,15 @@ export default function LogbookDayScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <Pressable style={styles.backButton} onPress={handleGoBack}>
-        <Ionicons name="chevron-back" size={22} color={PRIMARY} />
-        <Text style={styles.backLabel}>Volver</Text>
-      </Pressable>
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <Pressable style={styles.backButton} onPress={handleGoBack}>
+          <Ionicons name="chevron-back" size={24} color="#282828" />
+        </Pressable>
+        <Text style={styles.headerTitle}>{formatLongDate(displayDate)}</Text>
+        <View style={styles.headerRight} />
+      </View>
 
-      <Text style={styles.title}>{formatLongDate(displayDate)}</Text>
       <Text style={styles.subtitle}>Desafíos completados este día</Text>
 
       {loading ? (
@@ -150,12 +153,7 @@ export default function LogbookDayScreen() {
               style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
               onPress={() => handleSelectSession(session.id)}
             >
-              <View style={styles.cardHeader}>
-                <Text style={styles.cardTitle}>{session.challengeTitle}</Text>
-                {session.finishedAt && (
-                  <Text style={styles.cardTime}>{formatTime(session.finishedAt)}</Text>
-                )}
-              </View>
+              <Text style={styles.cardTitle}>{session.challengeTitle}</Text>
               <Text style={styles.cardDescription} numberOfLines={3}>
                 {session.challengeInstructions}
               </Text>
@@ -164,39 +162,44 @@ export default function LogbookDayScreen() {
           ))}
         </ScrollView>
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 24,
-    paddingTop: 24,
+    backgroundColor: '#F7FAFA',
   },
-  backButton: {
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
-    marginBottom: 12,
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F5F5',
   },
-  backLabel: {
-    marginLeft: 4,
-    color: PRIMARY,
-    fontFamily: 'PlusJakartaSans-Medium',
-    fontSize: 16,
+  backButton: {
+    padding: 8,
+    marginLeft: -8,
   },
-  title: {
-    fontSize: 24,
+  headerTitle: {
+    fontSize: 20,
     fontFamily: 'PlusJakartaSans-Bold',
-    color: '#1F2933',
+    color: '#282828',
+  },
+  headerRight: {
+    width: 40,
   },
   subtitle: {
     fontSize: 16,
     fontFamily: 'PlusJakartaSans-Regular',
     color: '#4B5A66',
     marginBottom: 16,
+    marginTop: 12,
+    paddingHorizontal: 24,
   },
   centered: {
     flex: 1,
@@ -210,14 +213,20 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   list: {
+    paddingHorizontal: 24,
     paddingBottom: 32,
     gap: 16,
   },
   card: {
-    backgroundColor: '#F5FAFA',
+    backgroundColor: '#FFFFFF',
     borderRadius: 20,
-    padding: 16,
+    padding: 20,
     gap: 8,
+    shadowColor: '#000000',
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
   },
   cardPressed: {
     opacity: 0.9,

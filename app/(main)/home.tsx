@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Pressable,
   ScrollView,
@@ -10,9 +12,6 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
 
 import {
   CATEGORY_CONFIG,
@@ -22,8 +21,9 @@ import {
   normalizeCategoryKey,
 } from '@/constants/categories';
 import { getChallengeIllustration } from '@/constants/challenge-illustrations';
-import { auth, db } from '@/lib/firebase';
+import { db } from '@/lib/firebase';
 import { useAuthStore } from '@/stores/auth';
+import { useChallengeStore } from '@/stores/challenge';
 
 type ChallengeSummary = {
   id: string;
@@ -52,21 +52,68 @@ const pickChallengeForToday = (candidates: ChallengeSummary[]) => {
 export default function HomeScreen() {
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
+  const activeChallengeId = useChallengeStore((s) => s.activeChallengeId);
+  const activeChallengeTitle = useChallengeStore((s) => s.activeChallengeTitle);
   const [displayName, setDisplayName] = useState<string>('');
   const [categories, setCategories] = useState<CategoryConfig[]>(
     DEFAULT_CATEGORY_KEYS.map((key) => CATEGORY_CONFIG[key])
   );
   const [loadingCategories, setLoadingCategories] = useState<boolean>(false);
-  const [menuOpen, setMenuOpen] = useState<boolean>(false);
-  const [signingOut, setSigningOut] = useState<boolean>(false);
   const [dailyChallenge, setDailyChallenge] = useState<ChallengeSummary | null>(null);
   const [loadingDailyChallenge, setLoadingDailyChallenge] = useState<boolean>(false);
+  const [dailyChallengeCompleted, setDailyChallengeCompleted] = useState<boolean>(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+
+      const checkCompletion = async () => {
+        if (!dailyChallenge || !user?.uid) {
+          if (!cancelled) setDailyChallengeCompleted(false);
+          return;
+        }
+        try {
+          const now = new Date();
+          const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+          const sessionsQuery = query(
+            collection(db, 'challengeSessions'),
+            where('userId', '==', user.uid),
+            where('challengeId', '==', dailyChallenge.id),
+            where('completed', '==', true)
+          );
+
+          const sessionsSnap = await getDocs(sessionsQuery);
+
+          let hasCompletedToday = false;
+          sessionsSnap.forEach((docSnap) => {
+            const data = docSnap.data();
+            if (data.finishedAt && data.finishedAt.toDate() >= startOfDay) {
+              hasCompletedToday = true;
+            }
+          });
+
+          if (!cancelled) {
+            setDailyChallengeCompleted(hasCompletedToday);
+          }
+        } catch (err) {
+          console.warn('[Home] Error checking daily challenge completion', err);
+        }
+      };
+
+      checkCompletion();
+
+      return () => {
+        cancelled = true;
+      };
+    }, [dailyChallenge, user?.uid])
+  );
 
   useEffect(() => {
     let active = true;
 
     const loadName = async () => {
-      const fallback = auth.currentUser?.displayName ?? '';
+      const fallback = user?.displayName ?? '';
       try {
         if (!user) {
           if (active) setDisplayName(fallback);
@@ -77,10 +124,10 @@ export default function HomeScreen() {
         const data = snap.exists() ? (snap.data() as { displayName?: string; name?: string }) : undefined;
         const storedName = data?.displayName ?? data?.name;
         if (active) {
-          setDisplayName(storedName?.trim() || fallback || user.email || '');
+          setDisplayName(storedName?.trim() || fallback);
         }
       } catch {
-        if (active) setDisplayName(fallback || user?.email || '');
+        if (active) setDisplayName(fallback);
       }
     };
 
@@ -154,7 +201,7 @@ export default function HomeScreen() {
             instructions,
             durationMinutes: duration,
             active: data.active,
-             category: normalizedCategory,
+            category: normalizedCategory,
           });
         });
 
@@ -187,129 +234,172 @@ export default function HomeScreen() {
     } as never);
   };
 
+  const handleAllChallengesPress = () => {
+    router.push('/(main)/all-challenges' as never);
+  };
+
+  const handleActiveChallengePress = () => {
+    if (!activeChallengeId) return;
+    router.push({
+      pathname: '/(main)/challenge/[challengeId]',
+      params: { challengeId: activeChallengeId },
+    } as never);
+  };
+
   const handleDailyChallengePress = () => {
     if (!dailyChallenge) return;
+    const isDailyBlocked = activeChallengeId !== null && activeChallengeId !== dailyChallenge.id;
+    if (isDailyBlocked) return;
     router.push({
       pathname: '/(main)/challenge/[challengeId]',
       params: { challengeId: dailyChallenge.id },
     } as never);
   };
 
-  const handleSignOut = async () => {
-    if (signingOut) return;
-    setSigningOut(true);
-    try {
-      await auth.signOut();
-    } catch (error) {
-      Alert.alert('Error', 'No pudimos cerrar sesión. Intenta nuevamente.');
-      console.error('[Home] signOut error', error);
-    } finally {
-      setSigningOut(false);
-      setMenuOpen(false);
-    }
-  };
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Abrir menú"
-          style={styles.menuButton}
-          onPress={() => setMenuOpen((prev) => !prev)}
-        >
-          <Ionicons name="menu" size={28} color="#282828" />
-        </Pressable>
         <Text style={styles.greeting}>{greeting}</Text>
       </View>
 
-      <Text style={styles.subtitle}>¿Qué quieres hacer hoy?</Text>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <Text style={styles.subtitle}>¿Qué quieres hacer hoy?</Text>
 
-      <View style={styles.categoriesWrapper}>
-        {loadingCategories ? (
-          <ActivityIndicator color="#039EA2" />
-        ) : (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.categoriesRow}
-          >
-            {categories.map((category) => (
-              <Pressable
-                key={category.key}
-                style={({ pressed }) => [
-                  styles.categoryCard,
-                  pressed && styles.categoryCardPressed,
-                ]}
-                onPress={() => handleCategoryPress(category)}
-              >
-                <View style={styles.categoryImageWrapper}>
-                  <Image source={category.image} style={styles.categoryImage} />
-                </View>
-                <Text style={styles.categoryLabel}>{category.label}</Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-        )}
-      </View>
-
-      <View style={styles.challengeSection}>
-        <Text style={styles.sectionHeading}>Tu desafío del día</Text>
-        {loadingDailyChallenge ? (
-          <View style={[styles.challengeCard, styles.challengeCardLoading]}>
-            <ActivityIndicator color="#039EA2" />
-          </View>
-        ) : dailyChallenge ? (
+        {/* ── Banner desafío en curso ── */}
+        {activeChallengeId && (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={`Abrir desafío ${dailyChallenge.title}`}
-            style={({ pressed }) => [styles.challengeCard, pressed && styles.challengeCardPressed]}
-            onPress={handleDailyChallengePress}
+            accessibilityLabel="Volver al desafío en curso"
+            style={({ pressed }) => [styles.activeCard, pressed && styles.activeCardPressed]}
+            onPress={handleActiveChallengePress}
           >
-            <View style={styles.challengeInfo}>
-              <Text style={styles.challengeTitle}>{dailyChallenge.title}</Text>
-              <Text style={styles.challengeDescription} numberOfLines={3}>
-                {dailyChallenge.instructions}
+            <View style={styles.activePulse} />
+            <View style={styles.activeCardInfo}>
+              <Text style={styles.activeCardEyebrow}>DESAFÍO EN CURSO</Text>
+              <Text style={styles.activeCardTitle} numberOfLines={1}>
+                {activeChallengeTitle ?? 'Desafío'}
               </Text>
-              <Text style={styles.challengeDuration}>
-                Duración: {dailyChallenge.durationMinutes} minutos
-              </Text>
-              <View style={styles.challengeButton}>
-                <Ionicons name="play" size={18} color="#FFFFFF" />
-                <Text style={styles.challengeButtonLabel}>Comenzar</Text>
-              </View>
+              <Text style={styles.activeCardCta}>Toca para volver al temporizador</Text>
             </View>
-            <Image source={getChallengeIllustration(dailyChallenge.category)} style={styles.challengeImage} />
+            <Ionicons name="timer-outline" size={32} color="#039EA2" />
           </Pressable>
-        ) : (
-          <View style={[styles.challengeCard, styles.challengeCardEmpty]}>
-            <Text style={styles.challengeEmptyTitle}>No encontramos desafíos activos.</Text>
-            <Text style={styles.challengeEmptySubtitle}>Intenta nuevamente más tarde.</Text>
-          </View>
         )}
-      </View>
 
-      {menuOpen && (
-        <Pressable style={styles.menuOverlay} onPress={() => setMenuOpen(false)}>
-          <View style={styles.menuPanel}>
-            <Text style={styles.menuTitle}>Menú</Text>
-            <View style={styles.menuItemRow}>
-              <Text style={styles.menuItemLabel}>Comunidad</Text>
-            </View>
-            <View style={styles.menuItemRow}>
-              <Text style={styles.menuItemLabel}>Configuración</Text>
-            </View>
-            <Pressable
-              style={({ pressed }) => [styles.menuItemRow, pressed && styles.menuItemPressed]}
-              onPress={handleSignOut}
+        <View style={styles.categoriesWrapper}>
+          {loadingCategories ? (
+            <ActivityIndicator color="#039EA2" />
+          ) : (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.categoriesRow}
             >
-              <Text style={[styles.menuItemLabel, styles.menuItemLogout]}>
-                {signingOut ? 'Cerrando...' : 'Cerrar sesión'}
-              </Text>
-            </Pressable>
+              {categories.map((category) => (
+                <Pressable
+                  key={category.key}
+                  style={({ pressed }) => [
+                    styles.categoryCard,
+                    pressed && styles.categoryCardPressed,
+                  ]}
+                  onPress={() => handleCategoryPress(category)}
+                >
+                  <View style={styles.categoryImageWrapper}>
+                    <Ionicons name={category.iconName} size={36} color="#FFFFFF" />
+                  </View>
+                  <Text style={styles.categoryLabel}>{category.label}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          )}
+        </View>
+
+        {/* ── Todos los desafíos ── */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Ver todos los desafíos"
+          style={({ pressed }) => [styles.allCard, pressed && styles.allCardPressed]}
+          onPress={handleAllChallengesPress}
+        >
+          <Ionicons name="apps-outline" size={32} color="#0F4D4F" />
+          <View style={styles.allCardInfo}>
+            <Text style={styles.allCardTitle}>Ver todos los desafíos</Text>
+            <Text style={styles.allCardDescription}>Explorá todos los desafíos disponibles</Text>
           </View>
+          <Ionicons name="chevron-forward" size={28} color="#0F4D4F" />
         </Pressable>
-      )}
+
+        <View style={styles.challengeSection}>
+          <Text style={styles.sectionHeading}>Tu desafío del día</Text>
+          {loadingDailyChallenge ? (
+            <View style={[styles.challengeCard, styles.challengeCardLoading]}>
+              <ActivityIndicator color="#039EA2" />
+            </View>
+          ) : dailyChallenge ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Abrir desafío ${dailyChallenge.title}`}
+              style={({ pressed }) => [styles.challengeCard, pressed && styles.challengeCardPressed]}
+              onPress={handleDailyChallengePress}
+            >
+              <View style={styles.challengeInfo}>
+                <Text style={styles.challengeTitle}>{dailyChallenge.title}</Text>
+                {dailyChallengeCompleted && (
+                  <View style={styles.completedBadge}>
+                    <Ionicons name="checkmark-circle" size={18} color="#2E7D32" />
+                    <Text style={styles.completedBadgeText}>COMPLETADO</Text>
+                  </View>
+                )}
+                <Text style={styles.challengeDescription} numberOfLines={3}>
+                  {dailyChallenge.instructions}
+                </Text>
+                <Text style={styles.challengeDuration}>
+                  Duración: {dailyChallenge.durationMinutes} minutos
+                </Text>
+                {(() => {
+                  const isDailyBlocked = activeChallengeId !== null && activeChallengeId !== dailyChallenge.id;
+                  return (
+                    <View style={[styles.challengeButton, isDailyBlocked && styles.challengeButtonDisabled]}>
+                      {!isDailyBlocked && (
+                        <Ionicons name={dailyChallengeCompleted ? 'reload' : 'play'} size={18} color="#FFFFFF" />
+                      )}
+                      <Text style={styles.challengeButtonLabel}>
+                        {isDailyBlocked ? 'Otro desafío en curso' : dailyChallengeCompleted ? 'Realizar de nuevo' : 'Comenzar'}
+                      </Text>
+                    </View>
+                  );
+                })()}
+              </View>
+              <Image source={getChallengeIllustration(dailyChallenge.category)} style={styles.challengeImage} />
+            </Pressable>
+          ) : (
+            <View style={[styles.challengeCard, styles.challengeCardEmpty]}>
+              <Text style={styles.challengeEmptyTitle}>No encontramos desafíos activos.</Text>
+              <Text style={styles.challengeEmptySubtitle}>Intenta nuevamente más tarde.</Text>
+            </View>
+          )}
+        </View>
+
+        {/* ── Sección Comunidad ── */}
+        <View style={styles.communitySection}>
+          <Text style={styles.sectionHeading}>Comunidad</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Ir a Comunidad"
+            style={({ pressed }) => [styles.communityCard, pressed && styles.communityCardPressed]}
+            onPress={() => router.push('/community' as never)}
+          >
+            <View style={styles.communityInfo}>
+              <Text style={styles.communityTitle}>Accede a la comunidad</Text>
+              <Text style={styles.communityDescription}>
+                Lee las reflexiones de los demás usuarios
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={28} color="#0F4D4F" />
+          </Pressable>
+        </View>
+      </ScrollView>
+
     </SafeAreaView>
   );
 }
@@ -319,6 +409,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 24,
+  },
+  scrollContent: {
+    paddingBottom: 32,
   },
   header: {
     flexDirection: 'row',
@@ -347,7 +440,7 @@ const styles = StyleSheet.create({
   },
   categoriesWrapper: {
     height: 150,
-    marginBottom: 32,
+    marginBottom: 16,
   },
   categoriesRow: {
     gap: 16,
@@ -386,6 +479,34 @@ const styles = StyleSheet.create({
   challengeSection: {
     marginBottom: 32,
   },
+  communitySection: {
+    marginBottom: 16,
+  },
+  communityCard: {
+    borderRadius: 24,
+    backgroundColor: '#E0EAEB',
+    padding: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  communityCardPressed: {
+    opacity: 0.92,
+  },
+  communityInfo: {
+    flex: 1,
+    gap: 8,
+  },
+  communityTitle: {
+    fontSize: 18,
+    fontFamily: 'PlusJakartaSans-Bold',
+    color: '#0F4D4F',
+  },
+  communityDescription: {
+    fontSize: 14,
+    fontFamily: 'PlusJakartaSans-Regular',
+    color: '#1F2933',
+  },
   sectionHeading: {
     fontSize: 20,
     fontFamily: 'PlusJakartaSans-Medium',
@@ -417,6 +538,24 @@ const styles = StyleSheet.create({
     fontFamily: 'PlusJakartaSans-Bold',
     color: '#0F4D4F',
   },
+  completedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E8F5E9',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    alignSelf: 'flex-start',
+    gap: 6,
+    borderWidth: 1,
+    borderColor: '#C8E6C9',
+  },
+  completedBadgeText: {
+    color: '#2E7D32',
+    fontFamily: 'PlusJakartaSans-Bold',
+    fontSize: 14,
+    letterSpacing: 0.5,
+  },
   challengeDescription: {
     fontSize: 14,
     fontFamily: 'PlusJakartaSans-Regular',
@@ -437,6 +576,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     alignSelf: 'flex-start',
     gap: 6,
+  },
+  challengeButtonDisabled: {
+    backgroundColor: '#A8B8C0',
   },
   challengeButtonLabel: {
     color: '#FFFFFF',
@@ -466,45 +608,72 @@ const styles = StyleSheet.create({
     fontFamily: 'PlusJakartaSans-Regular',
     color: '#4B5A66',
   },
-  menuOverlay: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-    paddingTop: 60,
-    paddingHorizontal: 24,
-  },
-  menuPanel: {
-    width: 220,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
+  allCard: {
+    borderRadius: 24,
+    backgroundColor: '#E0EAEB',
     padding: 20,
-    gap: 12,
-    elevation: 4,
-    shadowColor: '#000000',
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    marginBottom: 32,
   },
-  menuTitle: {
+  allCardPressed: {
+    opacity: 0.92,
+  },
+  allCardInfo: {
+    flex: 1,
+    gap: 4,
+  },
+  allCardTitle: {
     fontSize: 18,
     fontFamily: 'PlusJakartaSans-Bold',
-    color: '#282828',
+    color: '#0F4D4F',
   },
-  menuItemRow: {
-    paddingVertical: 8,
-  },
-  menuItemLabel: {
-    fontSize: 16,
+  allCardDescription: {
+    fontSize: 14,
     fontFamily: 'PlusJakartaSans-Regular',
-    color: '#282828',
+    color: '#1F2933',
   },
-  menuItemPressed: {
-    opacity: 0.75,
+  // Active challenge banner
+  activeCard: {
+    borderRadius: 20,
+    backgroundColor: '#EAF7F7',
+    borderWidth: 1.5,
+    borderColor: '#039EA2',
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    marginBottom: 20,
   },
-  menuItemLogout: {
-    color: '#D64545',
+  activeCardPressed: {
+    opacity: 0.88,
   },
+  activePulse: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#039EA2',
+  },
+  activeCardInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  activeCardEyebrow: {
+    fontSize: 11,
+    fontFamily: 'PlusJakartaSans-Bold',
+    color: '#039EA2',
+    letterSpacing: 0.8,
+  },
+  activeCardTitle: {
+    fontSize: 16,
+    fontFamily: 'PlusJakartaSans-Bold',
+    color: '#0F4D4F',
+  },
+  activeCardCta: {
+    fontSize: 12,
+    fontFamily: 'PlusJakartaSans-Regular',
+    color: '#4B5A66',
+  },
+
 });

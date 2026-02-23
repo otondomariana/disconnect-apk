@@ -1,3 +1,6 @@
+import { Ionicons } from '@expo/vector-icons';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -6,11 +9,9 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  View,
+  View
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
   CATEGORY_CONFIG,
@@ -20,6 +21,7 @@ import {
 } from '@/constants/categories';
 import { getChallengeIllustration } from '@/constants/challenge-illustrations';
 import { db } from '@/lib/firebase';
+import { useChallengeStore } from '@/stores/challenge';
 
 type ChallengeItem = {
   id: string;
@@ -32,6 +34,7 @@ type ChallengeItem = {
 export default function CategoryScreen() {
   const { category } = useLocalSearchParams<{ category?: string }>();
   const router = useRouter();
+  const activeChallengeId = useChallengeStore((s) => s.activeChallengeId);
 
   const normalizedCategory = useMemo(
     () => (category ? normalizeCategoryKey(category.toString()) : undefined),
@@ -46,6 +49,18 @@ export default function CategoryScreen() {
   const [challenges, setChallenges] = useState<ChallengeItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedDuration, setSelectedDuration] = useState<number>(0);
+
+  const durations = useMemo(() => {
+    const seen = new Set<number>();
+    challenges.forEach((c) => seen.add(c.durationMinutes));
+    return Array.from(seen).sort((a, b) => a - b);
+  }, [challenges]);
+
+  const filtered = useMemo(() => {
+    if (selectedDuration === 0) return challenges;
+    return challenges.filter((c) => c.durationMinutes === selectedDuration);
+  }, [challenges, selectedDuration]);
 
   useEffect(() => {
     let cancelled = false;
@@ -109,6 +124,8 @@ export default function CategoryScreen() {
   }, [normalizedCategory]);
 
   const handleOpenChallenge = (challenge: ChallengeItem) => {
+    // Siempre navega al detalle del desafío seleccionado
+    // (el detalle mismo bloquea "Comenzar" si hay otro en curso)
     router.push({
       pathname: '/(main)/challenge/[challengeId]',
       params: { challengeId: challenge.id },
@@ -121,74 +138,162 @@ export default function CategoryScreen() {
 
   if (!categoryData) {
     return (
-      <View style={styles.centeredContainer}>
-        <Text style={styles.errorTitle}>Categoría no encontrada</Text>
-        <Text style={styles.errorSubtitle}>Regresa al Inicio y prueba con otra categoría.</Text>
-      </View>
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.header}>
+          <Pressable style={styles.backButton} onPress={handleGoBack}>
+            <Ionicons name="chevron-back" size={24} color="#282828" />
+          </Pressable>
+          <Text style={styles.headerTitle}>Categoría</Text>
+          <View style={styles.headerRight} />
+        </View>
+        <View style={styles.centeredContainer}>
+          <Text style={styles.errorTitle}>Categoría no encontrada</Text>
+          <Text style={styles.errorSubtitle}>Regresa al Inicio y prueba con otra categoría.</Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <Pressable style={styles.backButton} onPress={handleGoBack}>
-        <Ionicons name="chevron-back" size={22} color="#039EA2" />
-        <Text style={styles.backLabel}>Volver</Text>
-      </Pressable>
-      <Text style={styles.title}>{categoryData.label}</Text>
-      <Text style={styles.subtitle}>Elige el desafío que quieras hacer hoy.</Text>
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.header}>
+        <Pressable style={styles.backButton} onPress={handleGoBack}>
+          <Ionicons name="chevron-back" size={24} color="#282828" />
+        </Pressable>
+        <Text style={styles.headerTitle}>{categoryData.label}</Text>
+        <View style={styles.headerRight} />
+      </View>
 
-      {loading ? (
-        <View style={styles.loader}>
-          <ActivityIndicator color="#039EA2" />
-        </View>
-      ) : error ? (
-        <View style={styles.centeredContainer}>
-          <Text style={styles.errorTitle}>{error}</Text>
-        </View>
-      ) : (
-        <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
-          {challenges.map((challengeItem) => (
-            <Pressable
-              key={challengeItem.id}
-              style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
-              onPress={() => handleOpenChallenge(challengeItem)}
-            >
-              <View style={styles.cardInfo}>
-                <Text style={styles.cardTitle}>{challengeItem.title}</Text>
-                <Text style={styles.cardDescription} numberOfLines={3}>
-                  {challengeItem.instructions}
-                </Text>
-                <Text style={styles.cardDuration}>
-                  Duración: {challengeItem.durationMinutes} minutos
-                </Text>
-                <View style={styles.cardButton}>
-                  <Text style={styles.cardButtonLabel}>Comenzar</Text>
+      <View style={styles.container}>
+
+        {loading ? (
+          <View style={styles.loader}>
+            <ActivityIndicator color="#039EA2" />
+          </View>
+        ) : error ? (
+          <View style={styles.centeredContainer}>
+            <Text style={styles.errorTitle}>{error}</Text>
+          </View>
+        ) : (
+          <>
+            <View style={styles.filtersBar}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.filtersContent}
+              >
+                <Pressable
+                  style={[styles.chip, selectedDuration === 0 && styles.chipActive]}
+                  onPress={() => setSelectedDuration(0)}
+                >
+                  <Text style={[styles.chipText, selectedDuration === 0 && styles.chipTextActive]}>
+                    Todos
+                  </Text>
+                </Pressable>
+
+                {durations.map((dur) => (
+                  <Pressable
+                    key={dur}
+                    style={[styles.chip, selectedDuration === dur && styles.chipActive]}
+                    onPress={() => setSelectedDuration(selectedDuration === dur ? 0 : dur)}
+                  >
+                    <Ionicons
+                      name="time-outline"
+                      size={13}
+                      color={selectedDuration === dur ? '#FFFFFF' : '#4B5A66'}
+                    />
+                    <Text style={[styles.chipText, selectedDuration === dur && styles.chipTextActive]}>
+                      {dur} min
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </View>
+
+            <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
+              {filtered.length === 0 ? (
+                <View style={styles.centeredContainer}>
+                  <Text style={styles.errorTitle}>
+                    No hay desafíos de {selectedDuration} minutos.
+                  </Text>
                 </View>
-              </View>
-              <Image
-                source={getChallengeIllustration(challengeItem.category ?? normalizedCategory)}
-                style={styles.cardImage}
-              />
-            </Pressable>
-          ))}
-        </ScrollView>
-      )}
-    </View>
+              ) : (
+                filtered.map((challengeItem) => {
+                  const isActive = activeChallengeId === challengeItem.id;
+                  const isBlocked = activeChallengeId !== null && !isActive;
+                  return (
+                    <Pressable
+                      key={challengeItem.id}
+                      style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+                      onPress={() => handleOpenChallenge(challengeItem)}
+                    >
+                      <View style={styles.cardInfo}>
+                        <Text style={styles.cardTitle}>{challengeItem.title}</Text>
+                        <Text style={styles.cardDescription} numberOfLines={3}>
+                          {challengeItem.instructions}
+                        </Text>
+                        <Text style={styles.cardDuration}>
+                          Duración: {challengeItem.durationMinutes} minutos
+                        </Text>
+                        <View style={[
+                          styles.cardButton,
+                          isBlocked && styles.cardButtonDisabled,
+                        ]}>
+                          <Text style={styles.cardButtonLabel}>
+                            {isActive ? 'En curso' : isBlocked ? 'Otro desafío en curso' : 'Comenzar'}
+                          </Text>
+                        </View>
+                      </View>
+                      <Image
+                        source={getChallengeIllustration(challengeItem.category ?? normalizedCategory)}
+                        style={[styles.cardImage, isBlocked && styles.cardImageDimmed]}
+                      />
+                    </Pressable>
+                  );
+                })
+              )}
+            </ScrollView>
+          </>
+        )}
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#F7FAFA',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F5F5',
+  },
+  backButton: {
+    padding: 8,
+    marginLeft: -8,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontFamily: 'PlusJakartaSans-Bold',
+    color: '#282828',
+  },
+  headerRight: {
+    width: 40
+  },
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 24,
-    paddingTop: 24,
   },
   centeredContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
     paddingHorizontal: 32,
   },
   loader: {
@@ -196,31 +301,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    paddingVertical: 8,
-    marginBottom: 12,
-  },
-  backLabel: {
-    color: '#039EA2',
-    fontFamily: 'PlusJakartaSans-Medium',
-    fontSize: 16,
-    marginLeft: 4,
-  },
-  title: {
-    fontSize: 28,
-    fontFamily: 'PlusJakartaSans-Bold',
-    color: '#039EA2',
-  },
   subtitle: {
     fontSize: 16,
     fontFamily: 'PlusJakartaSans-Regular',
     color: '#4B5A66',
-    marginBottom: 16,
+    marginHorizontal: 24,
+    marginTop: 24,
+    marginBottom: 8,
   },
   list: {
+    paddingHorizontal: 24,
+    paddingTop: 8,
     paddingBottom: 40,
     gap: 16,
   },
@@ -262,6 +353,9 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignSelf: 'flex-start',
   },
+  cardButtonDisabled: {
+    backgroundColor: '#A8B8C0',
+  },
   cardButtonLabel: {
     color: '#FFFFFF',
     fontFamily: 'PlusJakartaSans-Bold',
@@ -272,6 +366,9 @@ const styles = StyleSheet.create({
     height: 110,
     resizeMode: 'contain',
     opacity: 0.6,
+  },
+  cardImageDimmed: {
+    opacity: 0.25,
   },
   errorTitle: {
     fontSize: 18,
@@ -285,5 +382,41 @@ const styles = StyleSheet.create({
     color: '#9AA5B1',
     textAlign: 'center',
     marginTop: 6,
+  },
+  filtersBar: {
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F5F5',
+    height: 56,
+    justifyContent: 'center',
+  },
+  filtersContent: {
+    gap: 8,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    height: 56,
+  },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: '#F5FAFA',
+    borderWidth: 1,
+    borderColor: '#E0E5E7',
+  },
+  chipActive: {
+    backgroundColor: '#039EA2',
+    borderColor: '#039EA2',
+  },
+  chipText: {
+    fontSize: 13,
+    fontFamily: 'PlusJakartaSans-Medium',
+    color: '#4B5A66',
+  },
+  chipTextActive: {
+    color: '#FFFFFF',
   },
 });

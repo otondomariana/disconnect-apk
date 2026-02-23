@@ -3,6 +3,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { collection, doc, getDoc, getDocs, limit, query, where } from 'firebase/firestore';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { formatDateKey, formatLongDate, formatTime, fromFirestoreDate } from '@/lib/date';
 import { db } from '@/lib/firebase';
@@ -133,8 +134,8 @@ export default function LogbookSessionScreen() {
       typeof date === 'string'
         ? date
         : session.finishedAt
-        ? formatDateKey(session.finishedAt)
-        : undefined;
+          ? formatDateKey(session.finishedAt)
+          : undefined;
     router.push({
       pathname: '/(main)/reflection/[sessionId]',
       params: {
@@ -158,116 +159,135 @@ export default function LogbookSessionScreen() {
 
   if (loading) {
     return (
-      <View style={styles.fullCenter}>
-        <ActivityIndicator color={PRIMARY} />
-      </View>
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <Pressable style={styles.backButton} onPress={handleGoBack}>
+            <Ionicons name="chevron-back" size={24} color="#282828" />
+          </Pressable>
+          <View style={styles.headerRight} />
+        </View>
+        <View style={styles.fullCenter}>
+          <ActivityIndicator color={PRIMARY} />
+        </View>
+      </SafeAreaView>
     );
   }
 
   if (error || !session) {
     return (
-      <View style={styles.fullCenter}>
-        <Pressable style={styles.backButton} onPress={handleGoBack}>
-          <Ionicons name="chevron-back" size={22} color={PRIMARY} />
-          <Text style={styles.backLabel}>Volver</Text>
-        </Pressable>
-        <Text style={styles.errorText}>{error ?? 'No encontramos este desafío.'}</Text>
-      </View>
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <Pressable style={styles.backButton} onPress={handleGoBack}>
+            <Ionicons name="chevron-back" size={24} color="#282828" />
+          </Pressable>
+          <View style={styles.headerRight} />
+        </View>
+        <View style={styles.fullCenter}>
+          <Text style={styles.errorText}>{error ?? 'No encontramos este desafío.'}</Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 40 }}>
-      <Pressable style={styles.backButton} onPress={handleGoBack}>
-        <Ionicons name="chevron-back" size={22} color={PRIMARY} />
-        <Text style={styles.backLabel}>Volver</Text>
-      </Pressable>
-
-      <Text style={styles.title}>{session.challengeTitle}</Text>
-      <Text style={styles.instructions}>{session.challengeInstructions}</Text>
-
-      <View style={styles.infoCard}>
-        <Text style={styles.infoLabel}>Duración</Text>
-        <Text style={styles.infoValue}>{session.durationMinutes} minutos</Text>
-        <Text style={styles.infoLabel}>Comenzó</Text>
-        <Text style={styles.infoValue}>
-          {formatLongDate(session.startedAt) || 'Sin registro'}
-          {session.startedAt ? ` - ${formatTime(session.startedAt)}` : ''}
-        </Text>
-        <Text style={styles.infoLabel}>Finalizó</Text>
-        <Text style={styles.infoValue}>
-          {formatLongDate(session.finishedAt) || 'Sin registro'}
-          {session.finishedAt ? ` - ${formatTime(session.finishedAt)}` : ''}
-        </Text>
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <Pressable style={styles.backButton} onPress={handleGoBack}>
+          <Ionicons name="chevron-back" size={24} color="#282828" />
+        </Pressable>
+        <Text style={styles.headerTitle}>{session.challengeTitle}</Text>
+        <View style={styles.headerRight} />
       </View>
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40 }}>
+        <Text style={styles.instructions}>{session.challengeInstructions}</Text>
 
-      <View style={styles.reflectionCard}>
-        <Text style={styles.reflectionTitle}>Reflexión</Text>
-        {reflection ? (
-          <>
-            <Text style={styles.reflectionStatus}>
-              {reflection.isPublic
-                ? reflection.isAnonymous
-                  ? 'Publicada como anónima'
-                  : 'Publicada'
-                : 'Guardada en privado'}
-            </Text>
-            <Pressable style={styles.primaryButton} onPress={handleViewReflection}>
-              <Text style={styles.primaryLabel}>Ver reflexión</Text>
-            </Pressable>
-          </>
-        ) : (
-          <>
-            <Text style={styles.reflectionStatus}>
-              Aún no escribiste una reflexión sobre este desafío.
-            </Text>
-            <Pressable style={styles.secondaryButton} onPress={handleWriteReflection}>
-              <Text style={styles.secondaryLabel}>Escribir reflexión</Text>
-            </Pressable>
-          </>
-        )}
-      </View>
-    </ScrollView>
+        <View style={styles.infoCard}>
+          <Text style={styles.infoLabel}>Duración</Text>
+          <Text style={styles.infoValue}>{session.durationMinutes} minutos</Text>
+          <Text style={styles.infoLabel}>Comenzó</Text>
+          <Text style={styles.infoValue}>
+            {formatLongDate(session.startedAt) || 'Sin registro'}
+            {session.startedAt ? ` - ${formatTime(session.startedAt)}` : ''}
+          </Text>
+          <Text style={styles.infoLabel}>Finalizó</Text>
+          <Text style={styles.infoValue}>
+            {formatLongDate(session.finishedAt) || 'Sin registro'}
+            {session.finishedAt ? ` - ${formatTime(session.finishedAt)}` : ''}
+          </Text>
+        </View>
+
+        <View style={styles.reflectionCard}>
+          <Text style={styles.reflectionTitle}>Reflexión</Text>
+          {reflection ? (
+            <>
+              <Text style={styles.reflectionStatus}>
+                {reflection.isPublic
+                  ? reflection.isAnonymous
+                    ? 'Publicada como anónima'
+                    : 'Publicada'
+                  : 'Guardada en privado'}
+              </Text>
+              <Pressable style={styles.primaryButton} onPress={handleViewReflection}>
+                <Text style={styles.primaryLabel}>Ver reflexión</Text>
+              </Pressable>
+            </>
+          ) : (
+            <>
+              <Text style={styles.reflectionStatus}>
+                Aún no escribiste una reflexión sobre este desafío.
+              </Text>
+              <Pressable style={styles.secondaryButton} onPress={handleWriteReflection}>
+                <Text style={styles.secondaryLabel}>Escribir reflexión</Text>
+              </Pressable>
+            </>
+          )}
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#F7FAFA',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 24,
-    paddingTop: 24,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F5F5',
+  },
+  backButton: {
+    padding: 8,
+    marginLeft: -8,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontFamily: 'PlusJakartaSans-Bold',
+    color: '#282828',
+    flex: 1,
+    textAlign: 'center',
+    marginHorizontal: 8,
+  },
+  headerRight: {
+    width: 40,
   },
   fullCenter: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
-  },
-  backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    marginBottom: 12,
-  },
-  backLabel: {
-    marginLeft: 4,
-    color: PRIMARY,
-    fontFamily: 'PlusJakartaSans-Medium',
-    fontSize: 16,
   },
   errorText: {
     fontSize: 16,
     fontFamily: 'PlusJakartaSans-Medium',
     color: '#6E6E6E',
     textAlign: 'center',
-  },
-  title: {
-    fontSize: 26,
-    fontFamily: 'PlusJakartaSans-Bold',
-    color: '#0F4D4F',
-    marginBottom: 8,
   },
   instructions: {
     fontSize: 16,

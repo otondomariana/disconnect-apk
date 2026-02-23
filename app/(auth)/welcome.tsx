@@ -1,5 +1,5 @@
 import { Link } from 'expo-router';
-import { Image, StyleSheet, Text, View, Pressable } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 const PRIMARY = '#039EA2';
 
@@ -12,7 +12,7 @@ export default function WelcomeScreen() {
       </View>
 
       <Image
-        source={require('../assets/images/Contemplating-bro.png')}
+        source={require('../../assets/images/Contemplating-bro.png')}
         style={styles.illustration}
         resizeMode="contain"
       />

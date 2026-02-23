@@ -24,7 +24,10 @@
       "intentFilters": [
         {
           "action": "VIEW",
-          "category": ["BROWSABLE", "DEFAULT"],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ],
           "data": [
             {
               "scheme": "com.googleusercontent.apps.275539843435-csvcvs4n76tph4m2o0nrdikhhhi0fm2f",
@@ -50,6 +53,15 @@
           "dark": {
             "backgroundColor": "#000000"
           }
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#039EA2",
+          "defaultChannel": "challenge-timer",
+          "sounds": []
         }
       ]
     ],

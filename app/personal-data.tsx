@@ -16,6 +16,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { COUNTRIES } from '@/constants/countries';
 import { auth } from '@/lib/firebase';
@@ -91,6 +92,7 @@ type Params = {
 
 export default function PersonalDataScreen() {
   const params = useLocalSearchParams<Params>();
+  const insets = useSafeAreaInsets();
 
   const [name, setName] = useState('');
   const [birthDate, setBirthDate] = useState('');
@@ -225,53 +227,57 @@ export default function PersonalDataScreen() {
 
   return (
     <>
-      <KeyboardAvoidingView behavior={Platform.select({ ios: 'padding', android: undefined })} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-          <View style={styles.header}>
-            <Pressable accessibilityLabel="Volver" onPress={handleBack} style={styles.backButton}>
-              <Ionicons color={PRIMARY} name="arrow-back" size={24} />
+      <View style={[styles.safeArea, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+        <View style={styles.header}>
+          <Pressable accessibilityLabel="Volver" onPress={handleBack} style={styles.backButton}>
+            <Ionicons name="chevron-back" size={24} color="#282828" />
+          </Pressable>
+          <Text style={styles.headerTitle}>Completar datos</Text>
+          <View style={styles.headerRight} />
+        </View>
+
+        <KeyboardAvoidingView behavior={Platform.select({ ios: 'padding', android: undefined })} style={{ flex: 1 }}>
+          <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+
+            <Image
+              accessibilityIgnoresInvertColors
+              resizeMode="contain"
+              source={require('../assets/images/Meditation-bro.png')}
+              style={styles.illustration}
+            />
+
+            <TextInput
+              onChangeText={setName}
+              placeholder="Alias"
+              placeholderTextColor="#9B9B9B"
+              style={styles.input}
+              value={name}
+            />
+            <Pressable
+              accessibilityLabel="Seleccionar fecha de nacimiento"
+              disabled={loading}
+              onPress={openBirthDatePicker}
+              style={[styles.selectInput, loading && styles.disabled]}
+            >
+              <Text style={birthDate ? styles.selectValue : styles.selectPlaceholder}>{birthDateDisplay}</Text>
+              <Ionicons color="#9B9B9B" name="calendar" size={20} />
             </Pressable>
-            <Text style={styles.title}>Complete los siguientes datos para continuar</Text>
-          </View>
+            <Pressable
+              accessibilityLabel="Seleccionar país"
+              disabled={loading}
+              onPress={openCountryPicker}
+              style={[styles.selectInput, loading && styles.disabled]}
+            >
+              <Text style={country ? styles.selectValue : styles.selectPlaceholder}>{country || 'País'}</Text>
+              <Ionicons color="#9B9B9B" name="chevron-down" size={20} />
+            </Pressable>
 
-        <Image
-          accessibilityIgnoresInvertColors
-          resizeMode="contain"
-          source={require('../assets/images/Meditation-bro.png')}
-          style={styles.illustration}
-        />
-
-        <TextInput
-          onChangeText={setName}
-          placeholder="Alias"
-          placeholderTextColor="#9B9B9B"
-            style={styles.input}
-            value={name}
-          />
-          <Pressable
-            accessibilityLabel="Seleccionar fecha de nacimiento"
-            disabled={loading}
-            onPress={openBirthDatePicker}
-            style={[styles.selectInput, loading && styles.disabled]}
-          >
-            <Text style={birthDate ? styles.selectValue : styles.selectPlaceholder}>{birthDateDisplay}</Text>
-            <Ionicons color="#9B9B9B" name="calendar" size={20} />
-          </Pressable>
-          <Pressable
-            accessibilityLabel="Seleccionar país"
-            disabled={loading}
-            onPress={openCountryPicker}
-            style={[styles.selectInput, loading && styles.disabled]}
-          >
-            <Text style={country ? styles.selectValue : styles.selectPlaceholder}>{country || 'País'}</Text>
-            <Ionicons color="#9B9B9B" name="chevron-down" size={20} />
-          </Pressable>
-
-          <Pressable disabled={loading} onPress={handleContinue} style={[styles.primaryButton, loading && styles.disabled]}>
-            <Text style={styles.primaryLabel}>Continuar</Text>
-          </Pressable>
-        </ScrollView>
-      </KeyboardAvoidingView>
+            <Pressable disabled={loading} onPress={handleContinue} style={[styles.primaryButton, loading && styles.disabled]}>
+              <Text style={styles.primaryLabel}>Continuar</Text>
+            </Pressable>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </View>
 
       <Modal
         animationType="slide"
@@ -372,26 +378,39 @@ export default function PersonalDataScreen() {
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F5F5',
+    marginBottom: 8,
+  },
+  backButton: {
+    padding: 8,
+    marginLeft: -8,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontFamily: 'PlusJakartaSans-Bold',
+    color: '#282828',
+  },
+  headerRight: {
+    width: 40
+  },
   container: {
     flexGrow: 1,
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 24,
     paddingTop: 16,
     paddingBottom: 32,
-  },
-  header: {
-    marginBottom: 16,
-  },
-  backButton: {
-    alignSelf: 'flex-start',
-    padding: 4,
-    borderRadius: 999,
-  },
-  title: {
-    fontFamily: 'PlusJakartaSans-Bold',
-    fontSize: 22,
-    color: PRIMARY,
-    marginTop: 12,
   },
   illustration: {
     width: '100%',

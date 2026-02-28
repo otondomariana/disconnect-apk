@@ -32,7 +32,7 @@ type ReflectionData = {
 const PRIMARY = '#039EA2';
 
 export default function ReflectionDetailScreen() {
-  const { reflectionId } = useLocalSearchParams<{ reflectionId?: string }>();
+  const { reflectionId, origin } = useLocalSearchParams<{ reflectionId?: string; origin?: string }>();
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
 
@@ -102,8 +102,14 @@ export default function ReflectionDetailScreen() {
   }, [reflectionId, user?.uid]);
 
   const handleGoBack = () => {
-    if (router.canGoBack()) router.back();
-    else router.replace('/(main)/logbook');
+    if (origin === 'my-reflections') {
+      if (router.canGoBack()) router.back();
+      else router.replace('/my-reflections');
+    } else if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(main)/logbook');
+    }
   };
 
   const handleStartEdit = () => {
@@ -173,7 +179,10 @@ export default function ReflectionDetailScreen() {
             setDeleting(true);
             try {
               await deleteDoc(doc(db, 'reflections', reflectionId));
-              if (router.canGoBack()) {
+              if (origin === 'my-reflections') {
+                if (router.canGoBack()) router.back();
+                else router.replace('/my-reflections');
+              } else if (router.canGoBack()) {
                 router.back();
               } else {
                 router.replace('/(main)/logbook');

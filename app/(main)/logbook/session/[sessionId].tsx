@@ -30,7 +30,7 @@ type ReflectionInfo = {
 const PRIMARY = '#039EA2';
 
 export default function LogbookSessionScreen() {
-  const { sessionId, date } = useLocalSearchParams<{ sessionId?: string; date?: string }>();
+  const { sessionId, date, origin } = useLocalSearchParams<{ sessionId?: string; date?: string; origin?: string }>();
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
   const [session, setSession] = useState<SessionDetail | null>(null);
@@ -121,7 +121,13 @@ export default function LogbookSessionScreen() {
   );
 
   const handleGoBack = () => {
-    if (router.canGoBack()) {
+    if (origin === 'completed-challenges') {
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace('/completed-challenges');
+      }
+    } else if (router.canGoBack()) {
       router.back();
     } else {
       router.replace('/(main)/logbook');
@@ -143,7 +149,7 @@ export default function LogbookSessionScreen() {
         challengeId: session.challengeId,
         title: session.challengeTitle,
         instructions: session.challengeInstructions,
-        origin: 'logbook',
+        origin: origin || 'logbook',
         originDate: returnDate,
       },
     } as never);

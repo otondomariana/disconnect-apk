@@ -63,7 +63,13 @@ export default function ReflectionScreen() {
   };
 
   const navigateAfterSave = () => {
-    if (origin === 'logbook') {
+    if (origin === 'completed-challenges') {
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace('/completed-challenges');
+      }
+    } else if (origin === 'logbook') {
       if (originDate) {
         router.replace({
           pathname: '/(main)/logbook/[date]',
@@ -120,7 +126,13 @@ export default function ReflectionScreen() {
   };
 
   const handleGoBack = () => {
-    if (origin === 'logbook' && router.canGoBack()) {
+    if (origin === 'completed-challenges') {
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace('/completed-challenges');
+      }
+    } else if (origin === 'logbook' && router.canGoBack()) {
       router.back();
     } else {
       router.replace('/(main)/home');

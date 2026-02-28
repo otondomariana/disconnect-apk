@@ -10,8 +10,7 @@ import {
     ScrollView,
     StyleSheet,
     Text,
-    TextInput,
-    View,
+    View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -32,8 +31,8 @@ type SessionItem = {
     challengeInstructions: string;
     challengeCategory?: CategoryKey;
     finishedAt?: Date;
+    hasReflection: boolean;
 };
-type ChallengeOption = { id: string; title: string; category?: CategoryKey };
 
 // Extrae el día lógico en Argentina (UTC-3) de un timestamp de Firestore
 const getLogicalDay = (d: Date): Date => {
@@ -161,32 +160,18 @@ export default function CompletedChallengesScreen() {
         setShowDateModal(false);
     };
 
-    // ── Filtro de desafío ──────────────────────────────────────────────────
-    const [selectedChallenge, setSelectedChallenge] = useState<ChallengeOption | null>(null);
-    const [selectedCategory, setSelectedCategory] = useState<CategoryKey | null>(null);
-    const [showChallengeModal, setShowChallengeModal] = useState(false);
-    const [search, setSearch] = useState('');
+    // ── Filtro de reflexión ────────────────────────────────────────────────
+    const [reflectionFilter, setReflectionFilter] = useState<'all' | 'with' | 'without'>('all');
 
-    const challengeOptions = useMemo<ChallengeOption[]>(() => {
-        const seen = new Map<string, ChallengeOption>();
-        sessions.forEach((s) => {
-            if (!seen.has(s.challengeId))
-                seen.set(s.challengeId, { id: s.challengeId, title: s.challengeTitle, category: s.challengeCategory });
-        });
-        return Array.from(seen.values()).sort((a, b) => a.title.localeCompare(b.title));
-    }, [sessions]);
+    // ── Filtro de categoría ──────────────────────────────────────────────────
+    const [selectedCategory, setSelectedCategory] = useState<CategoryKey | null>(null);
+    const [showCategoryModal, setShowCategoryModal] = useState(false);
 
     const availableCategories = useMemo(() => {
         const keys = new Set<CategoryKey>();
-        challengeOptions.forEach((c) => { if (c.category) keys.add(c.category); });
+        sessions.forEach((s) => { if (s.challengeCategory) keys.add(s.challengeCategory); });
         return Array.from(keys).map((k) => CATEGORY_CONFIG[k]).filter(Boolean);
-    }, [challengeOptions]);
-
-    const filteredForModal = useMemo(() => {
-        const pool = selectedCategory ? challengeOptions.filter((c) => c.category === selectedCategory) : challengeOptions;
-        if (!search.trim()) return pool;
-        return pool.filter((c) => c.title.toLowerCase().includes(search.toLowerCase()));
-    }, [challengeOptions, selectedCategory, search]);
+    }, [sessions]);
 
     // ── Resultados visibles: usa día lógico Argentina para comparar fechas ────
     const visible = useMemo(() => sessions.filter((s) => {
@@ -198,13 +183,17 @@ export default function CompletedChallengesScreen() {
             return false;
         }
         if (selectedCategory && s.challengeCategory !== selectedCategory) return false;
-        if (selectedChallenge && s.challengeId !== selectedChallenge.id) return false;
+
+        if (reflectionFilter === 'with' && !s.hasReflection) return false;
+        if (reflectionFilter === 'without' && s.hasReflection) return false;
+
         return true;
-    }), [sessions, activeFrom, activeTo, selectedCategory, selectedChallenge]);
+    }), [sessions, activeFrom, activeTo, selectedCategory, reflectionFilter]);
 
     const hasDateFilter = activeFrom !== null || activeTo !== null;
-    const hasChallengeFilter = selectedCategory !== null || selectedChallenge !== null;
-    const hasFilters = hasDateFilter || hasChallengeFilter;
+    const hasCategoryFilter = selectedCategory !== null;
+    const hasReflectionFilter = reflectionFilter !== 'all';
+    const hasFilters = hasDateFilter || hasCategoryFilter || hasReflectionFilter;
 
     // ── Carga de datos ─────────────────────────────────────────────────────
     useEffect(() => {
@@ -213,13 +202,28 @@ export default function CompletedChallengesScreen() {
             if (!user?.uid) { if (active) setLoading(false); return; }
             try {
                 const snap = await getDocs(query(collection(db, 'challengeSessions'), where('userId', '==', user.uid)));
+                const refSnap = await getDocs(query(collection(db, 'reflections'), where('userId', '==', user.uid)));
+
+                const reflectionSessionIds = new Set<string>();
+                refSnap.forEach(doc => {
+                    const rData = doc.data();
+                    if (rData.active && rData.sessionId) reflectionSessionIds.add(rData.sessionId);
+                });
+
                 const raw: SessionItem[] = [];
                 snap.forEach((docSnap) => {
                     const data = docSnap.data() as { challengeId?: string; finishedAt?: unknown; completed?: boolean };
                     if (data.completed === false) return;
                     const finished = fromFirestoreDate(data.finishedAt);
                     if (!finished || !data.challengeId) return;
-                    raw.push({ id: docSnap.id, challengeId: data.challengeId, challengeTitle: '', challengeInstructions: '', finishedAt: finished });
+                    raw.push({
+                        id: docSnap.id,
+                        challengeId: data.challengeId,
+                        challengeTitle: '',
+                        challengeInstructions: '',
+                        finishedAt: finished,
+                        hasReflection: reflectionSessionIds.has(docSnap.id)
+                    });
                 });
                 raw.sort((a, b) => (b.finishedAt?.getTime() ?? 0) - (a.finishedAt?.getTime() ?? 0));
 
@@ -255,18 +259,18 @@ export default function CompletedChallengesScreen() {
     }, [user?.uid]);
 
     const handleGoBack = () => router.canGoBack() ? router.back() : router.replace('/(main)/profile');
-    const handleSelectSession = (id: string) => router.push({ pathname: '/(main)/logbook/session/[sessionId]', params: { sessionId: id } } as never);
+    const handleSelectSession = (id: string) => router.push({ pathname: '/(main)/logbook/session/[sessionId]', params: { sessionId: id, origin: 'completed-challenges' } } as never);
 
-    const handleSelectChallenge = (ch: ChallengeOption) => {
-        setSelectedChallenge(ch);
-        if (ch.category && selectedCategory !== ch.category) setSelectedCategory(ch.category);
-        setShowChallengeModal(false); setSearch('');
+    const handleToggleReflection = (val: 'with' | 'without') => {
+        setReflectionFilter(prev => prev === val ? 'all' : val);
     };
-    const handleToggleCategory = (key: CategoryKey) => {
-        if (selectedCategory === key) { setSelectedCategory(null); setSelectedChallenge(null); }
-        else { setSelectedCategory(key); if (selectedChallenge?.category !== key) setSelectedChallenge(null); }
+
+    const handleSelectCategory = (catConfig: any | null) => {
+        setSelectedCategory(catConfig ? catConfig.key : null);
+        setShowCategoryModal(false);
     };
-    const clearAllFilters = () => { setActiveFrom(null); setActiveTo(null); setSelectedCategory(null); setSelectedChallenge(null); };
+
+    const clearAllFilters = () => { setActiveFrom(null); setActiveTo(null); setSelectedCategory(null); setReflectionFilter('all'); };
 
     return (
         <SafeAreaView style={styles.container}>
@@ -294,25 +298,25 @@ export default function CompletedChallengesScreen() {
                                 </Text>
                                 <Ionicons name="chevron-down" size={12} color={hasDateFilter ? '#FFF' : '#4B5A66'} />
                             </Pressable>
-                            {/* Categorías */}
-                            {availableCategories.map((cat) => {
-                                const active = selectedCategory === cat.key;
-                                return (
-                                    <Pressable key={cat.key} style={[styles.chip, active && styles.chipActive]} onPress={() => handleToggleCategory(cat.key)}>
-                                        <Ionicons name={cat.iconName} size={13} color={active ? '#FFF' : '#4B5A66'} />
-                                        <Text style={[styles.chipText, active && styles.chipTextActive]}>{cat.label}</Text>
-                                    </Pressable>
-                                );
-                            })}
+
+                            {/* Reflexión Chips */}
+                            <Pressable style={[styles.chip, reflectionFilter === 'with' && styles.chipActive]} onPress={() => handleToggleReflection('with')}>
+                                <Ionicons name="document-text-outline" size={13} color={reflectionFilter === 'with' ? '#FFF' : '#4B5A66'} />
+                                <Text style={[styles.chipText, reflectionFilter === 'with' && styles.chipTextActive]}>Con reflexión</Text>
+                            </Pressable>
+                            <Pressable style={[styles.chip, reflectionFilter === 'without' && styles.chipActive]} onPress={() => handleToggleReflection('without')}>
+                                <Ionicons name="document-outline" size={13} color={reflectionFilter === 'without' ? '#FFF' : '#4B5A66'} />
+                                <Text style={[styles.chipText, reflectionFilter === 'without' && styles.chipTextActive]}>Sin reflexión</Text>
+                            </Pressable>
                         </ScrollView>
 
                         <View style={styles.filterRow}>
-                            <Pressable style={[styles.challengeFilterBtn, selectedChallenge && styles.challengeFilterBtnActive]} onPress={() => setShowChallengeModal(true)}>
-                                <Ionicons name="flash-outline" size={14} color={selectedChallenge ? '#FFF' : '#4B5A66'} />
-                                <Text style={[styles.challengeFilterText, selectedChallenge && styles.challengeFilterTextActive]} numberOfLines={1}>
-                                    {selectedChallenge ? selectedChallenge.title : 'Filtrar por desafío'}
+                            <Pressable style={[styles.challengeFilterBtn, hasCategoryFilter && styles.challengeFilterBtnActive]} onPress={() => setShowCategoryModal(true)}>
+                                <Ionicons name="grid-outline" size={14} color={hasCategoryFilter ? '#FFF' : '#4B5A66'} />
+                                <Text style={[styles.challengeFilterText, hasCategoryFilter && styles.challengeFilterTextActive]} numberOfLines={1}>
+                                    {hasCategoryFilter && selectedCategory ? CATEGORY_CONFIG[selectedCategory]?.label : 'Categoría'}
                                 </Text>
-                                <Ionicons name="chevron-down" size={14} color={selectedChallenge ? '#FFF' : '#4B5A66'} />
+                                <Ionicons name="chevron-down" size={14} color={hasCategoryFilter ? '#FFF' : '#4B5A66'} />
                             </Pressable>
                             {hasFilters && <Pressable style={styles.clearBtn} onPress={clearAllFilters}><Ionicons name="close-circle" size={20} color="#A0A0A0" /></Pressable>}
                         </View>
@@ -403,36 +407,32 @@ export default function CompletedChallengesScreen() {
                 </Pressable>
             </Modal>
 
-            {/* ── MODAL: BUSCADOR DE DESAFÍOS ── */}
-            <Modal visible={showChallengeModal} animationType="slide" transparent onRequestClose={() => { setShowChallengeModal(false); setSearch(''); }}>
-                <Pressable style={styles.modalOverlay} onPress={() => { setShowChallengeModal(false); setSearch(''); }}>
+            {/* ── MODAL: CATEGORIAS ── */}
+            <Modal visible={showCategoryModal} animationType="slide" transparent onRequestClose={() => setShowCategoryModal(false)}>
+                <Pressable style={styles.modalOverlay} onPress={() => setShowCategoryModal(false)}>
                     <Pressable style={styles.modalSheet} onPress={() => { }}>
                         <View style={styles.modalHandle} />
-                        <Text style={styles.modalTitle}>Filtrar por desafío</Text>
-                        <View style={styles.searchBox}>
-                            <Ionicons name="search-outline" size={16} color="#A0A0A0" />
-                            <TextInput style={styles.searchInput} value={search} onChangeText={setSearch} placeholder="Buscar desafío..." placeholderTextColor="#A0A0A0" autoFocus returnKeyType="search" />
-                            {search.length > 0 && <Pressable onPress={() => setSearch('')}><Ionicons name="close-circle" size={16} color="#A0A0A0" /></Pressable>}
-                        </View>
-                        <Pressable style={[styles.modalItem, !selectedChallenge && styles.modalItemActive]} onPress={() => { setSelectedChallenge(null); setShowChallengeModal(false); setSearch(''); }}>
-                            <Text style={[styles.modalItemText, !selectedChallenge && styles.modalItemTextActive]}>Todos los desafíos</Text>
-                            {!selectedChallenge && <Ionicons name="checkmark" size={18} color={PRIMARY} />}
+                        <Text style={styles.modalTitle}>Filtrar por categoría</Text>
+
+                        <Pressable style={[styles.modalItem, !selectedCategory && styles.modalItemActive]} onPress={() => handleSelectCategory(null)}>
+                            <Text style={[styles.modalItemText, !selectedCategory && styles.modalItemTextActive]}>Todas las categorías</Text>
+                            {!selectedCategory && <Ionicons name="checkmark" size={18} color={PRIMARY} />}
                         </Pressable>
+
                         <FlatList
-                            data={filteredForModal}
-                            keyExtractor={(item) => item.id}
+                            data={availableCategories}
+                            keyExtractor={(item) => item.key}
                             keyboardShouldPersistTaps="handled"
                             showsVerticalScrollIndicator={false}
                             style={{ maxHeight: 320 }}
-                            ListEmptyComponent={<View style={styles.modalEmpty}><Text style={styles.modalEmptyText}>No se encontraron desafíos.</Text></View>}
+                            ListEmptyComponent={<View style={styles.modalEmpty}><Text style={styles.modalEmptyText}>No hay categorías disponibles.</Text></View>}
                             renderItem={({ item }) => {
-                                const isActive = selectedChallenge?.id === item.id;
-                                const catConfig = item.category ? CATEGORY_CONFIG[item.category] : null;
+                                const isActive = selectedCategory === item.key;
                                 return (
-                                    <Pressable style={[styles.modalItem, isActive && styles.modalItemActive]} onPress={() => handleSelectChallenge(item)}>
-                                        <View style={{ flex: 1, gap: 2 }}>
-                                            <Text style={[styles.modalItemText, isActive && styles.modalItemTextActive]} numberOfLines={2}>{item.title}</Text>
-                                            {catConfig && <Text style={styles.modalItemCategory}>{catConfig.label}</Text>}
+                                    <Pressable style={[styles.modalItem, isActive && styles.modalItemActive]} onPress={() => handleSelectCategory(item)}>
+                                        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                                            <Ionicons name={item.iconName as any} size={18} color={isActive ? PRIMARY : '#A0A0A0'} />
+                                            <Text style={[styles.modalItemText, isActive && styles.modalItemTextActive]}>{item.label}</Text>
                                         </View>
                                         {isActive && <Ionicons name="checkmark" size={18} color={PRIMARY} />}
                                     </Pressable>

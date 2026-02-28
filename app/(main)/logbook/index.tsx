@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
   buildDateKeyFromParts,
+  calculateStreak,
   fromFirestoreDate,
   getLogicalDateParts,
   WEEKDAY_LABELS,
@@ -106,43 +107,8 @@ export default function LogbookScreen() {
       });
       setCompletions(map);
 
-      // Calcular racha
-      const days = Object.keys(map);
-      let streak = 0;
-      const sortedDays = days.sort((a, b) => b.localeCompare(a));
-      if (sortedDays.length > 0) {
-        const today = new Date();
-        const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-
-        const yesterday = new Date(today);
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
-
-        let checkStr = todayStr;
-        if (sortedDays[0] === todayStr) {
-          streak = 1;
-        } else if (sortedDays[0] === yesterdayStr) {
-          streak = 1;
-          checkStr = yesterdayStr;
-        } else {
-          streak = 0;
-        }
-
-        if (streak > 0) {
-          for (let i = 1; i < sortedDays.length; i++) {
-            const prevDate = new Date(`${checkStr}T00:00:00`);
-            prevDate.setDate(prevDate.getDate() - 1);
-            const prevStr = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}-${String(prevDate.getDate()).padStart(2, '0')}`;
-
-            if (sortedDays[i] === prevStr) {
-              streak++;
-              checkStr = prevStr;
-            } else {
-              break;
-            }
-          }
-        }
-      }
+      // Calcular racha unificada
+      const streak = calculateStreak(Object.keys(map));
       setCurrentStreak(streak);
 
     } catch (error) {

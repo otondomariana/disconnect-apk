@@ -82,6 +82,7 @@ export default function RootLayout() {
             <Stack.Screen name="personal-data" options={{ headerShown: false }} />
             <Stack.Screen name="achievements" options={{ headerShown: false, presentation: 'modal' }} />
             <Stack.Screen name="completed-challenges" options={{ headerShown: false, presentation: 'modal' }} />
+            <Stack.Screen name="my-reflections" options={{ headerShown: false, presentation: 'modal' }} />
             <Stack.Screen name="community" options={{ headerShown: false }} />
             <Stack.Screen name="privacy-security" options={{ headerShown: false }} />
 

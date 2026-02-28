@@ -118,3 +118,55 @@ type DateParts = {
   month: number;
   day: number;
 };
+
+export const calculateStreak = (dateKeys: string[]): number => {
+  const uniqueDays = Array.from(new Set(dateKeys)).sort((a, b) => b.localeCompare(a));
+  if (uniqueDays.length === 0) return 0;
+
+  const todayStr = formatDateKey(new Date());
+  const todayLogical = parseDateKey(todayStr);
+  let yesterdayStr = todayStr;
+
+  if (todayLogical) {
+    todayLogical.setUTCDate(todayLogical.getUTCDate() - 1);
+    yesterdayStr = buildDateKeyFromParts({
+      year: todayLogical.getUTCFullYear(),
+      month: todayLogical.getUTCMonth(),
+      day: todayLogical.getUTCDate(),
+    });
+  }
+
+  let currentStreak = 0;
+  let checkStr = todayStr;
+
+  if (uniqueDays[0] === todayStr) {
+    currentStreak = 1;
+  } else if (uniqueDays[0] === yesterdayStr) {
+    currentStreak = 1;
+    checkStr = yesterdayStr;
+  } else {
+    return 0; // The streak was lost
+  }
+
+  for (let i = 1; i < uniqueDays.length; i++) {
+    const dateObj = parseDateKey(checkStr);
+    if (!dateObj) break;
+
+    // Use UTC methods because parseDateKey returns noon UTC
+    dateObj.setUTCDate(dateObj.getUTCDate() - 1);
+    const prevStr = buildDateKeyFromParts({
+      year: dateObj.getUTCFullYear(),
+      month: dateObj.getUTCMonth(),
+      day: dateObj.getUTCDate()
+    });
+
+    if (uniqueDays[i] === prevStr) {
+      currentStreak++;
+      checkStr = prevStr;
+    } else {
+      break;
+    }
+  }
+
+  return currentStreak;
+};

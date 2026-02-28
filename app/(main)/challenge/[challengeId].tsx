@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as Device from 'expo-device';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { addDoc, collection, doc, getDoc, getDocs, query, Timestamp, where } from 'firebase/firestore';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -16,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { normalizeCategoryKey, type CategoryKey } from '@/constants/categories';
 import { getChallengeIllustration } from '@/constants/challenge-illustrations';
+import { buildDateKeyFromParts, calculateStreak, fromFirestoreDate, getLogicalDateParts } from '@/lib/date';
 import { db } from '@/lib/firebase';
 import {
   cancelChallengeTimerNotification,
@@ -105,25 +107,58 @@ export default function ChallengeDetailScreen() {
     };
   }, []);
 
-  // Detectar foreground/background para cambiar el tipo de notificación:
-  // Foreground → countdown live segundo a segundo
-  // Background → notificación estática con la hora de finalización (siempre exacta)
+  // Detectar foreground/background para cambiar el tipo de notificación y verificar engaños de reloj
   useEffect(() => {
-    const sub = AppState.addEventListener('change', (nextState) => {
+    let backgroundWallClock: number | null = null;
+    let backgroundUptime: number | null = null;
+    let expectedRemainingAtBg: number | null = null;
+
+    const sub = AppState.addEventListener('change', async (nextState) => {
       const isRunning = statusRef.current === 'running';
       const title = challengeRef.current?.title;
 
       if ((nextState === 'background' || nextState === 'inactive') && isRunning && endAtRef.current && title) {
-        // App va a background: mostrar hora de fin (no necesita actualización JS)
+        // App va a background
+        backgroundWallClock = Date.now();
+        backgroundUptime = await Device.getUptimeAsync();
+        expectedRemainingAtBg = Math.max(0, Math.round((endAtRef.current - backgroundWallClock) / 1000));
+
         showChallengeEndTimeNotification(title, endAtRef.current);
       } else if (nextState === 'active' && isRunning && endAtRef.current) {
-        // App vuelve al foreground: recalcular tiempo exacto y reanudar countdown live
-        const remaining = Math.max(0, Math.round((endAtRef.current - Date.now()) / 1000));
+        // App vuelve al foreground: recalcular.
+        const nowWallClock = Date.now();
+        const nowUptime = await Device.getUptimeAsync();
+
+        let remaining = Math.max(0, Math.round((endAtRef.current - nowWallClock) / 1000));
+
+        if (backgroundWallClock && expectedRemainingAtBg !== null && backgroundUptime !== null) {
+          const deltaWallClock = nowWallClock - backgroundWallClock;
+          const deltaUptime = nowUptime - backgroundUptime;
+
+          // Uptime in Android stops in deep sleep, so deltaUptime <= deltaWallClock generally.
+          // Fraud detection: If wall clock jumped FORWARD massively more than Uptime (e.g. user changed time).
+          // We allow some flexibility for device drift, but if it's over 1 minute off, it's highly suspect.
+          // Fraud detection 2: If wall clock jumped BACKWARD significantly (negative deltaWallClock).
+          const isForwardFraud = deltaWallClock > deltaUptime + 60000;
+          const isBackwardFraud = deltaWallClock < 0;
+
+          if (isBackwardFraud || isForwardFraud) {
+            console.warn(`[ChallengeDetail] Clock anomaly detected. Wall: ${deltaWallClock}ms, Uptime: ${deltaUptime}ms, Reverting to safe monotonic progression.`);
+            // Nullify the fraudulent wall clock shift, trust the uptime delta as the true elapsed time 
+            // (or if deep sleep happened, it just pauses the timer safely offline)
+            const safeElapsedMs = Math.max(0, deltaUptime);
+            const safeElapsedSecs = Math.round(safeElapsedMs / 1000);
+
+            remaining = Math.max(0, expectedRemainingAtBg - safeElapsedSecs);
+            // Fix the actual internal wall clock target for intervals until next bg
+            endAtRef.current = nowWallClock + (remaining * 1000);
+          }
+        }
+
         setRemainingSeconds(remaining);
         if (remaining === 0) {
           setStatus('completed');
         }
-        // El useEffect que observa remainingSeconds reactivará showChallengeTimerNotification
       }
     });
     return () => sub.remove();
@@ -259,17 +294,19 @@ export default function ChallengeDetailScreen() {
         const achievementsSnap = await getDocs(
           query(
             collection(db, 'userAchievements'),
-            where('userId', '==', user.uid),
-            where('achievementTypeId', '==', 'first_challenge_completed')
+            where('userId', '==', user.uid)
           )
         );
 
-        if (achievementsSnap.empty) {
+        const hasFirstChallenge = achievementsSnap.docs.some((d) => d.data().achievementTypeId === 'first_challenge_completed');
+        const has7DayStreak = achievementsSnap.docs.some((d) => d.data().achievementTypeId === 'streak_7_days');
+
+        if (!hasFirstChallenge || !has7DayStreak) {
           const sessionsSnap = await getDocs(
             query(collection(db, 'challengeSessions'), where('userId', '==', user.uid))
           );
 
-          if (sessionsSnap.size === 1) {
+          if (!hasFirstChallenge && sessionsSnap.size === 1) {
             await addDoc(collection(db, 'userAchievements'), {
               achievementTypeId: 'first_challenge_completed',
               userId: user.uid,
@@ -280,6 +317,35 @@ export default function ChallengeDetailScreen() {
               'Primer Desafío',
               'Completaste tu primer desafío.'
             );
+          } else if (!has7DayStreak) {
+            // Verificar racha de 7 días
+            const days = new Set<string>();
+            sessionsSnap.forEach((docSnap) => {
+              const data = docSnap.data();
+              if (data.completed === false) return;
+              const finished = fromFirestoreDate(data.finishedAt);
+              if (finished) {
+                const parts = getLogicalDateParts(finished);
+                days.add(buildDateKeyFromParts(parts));
+              }
+            });
+
+            const currentStreak = calculateStreak(Array.from(days));
+            if (currentStreak >= 7) {
+              await addDoc(collection(db, 'userAchievements'), {
+                achievementTypeId: 'streak_7_days',
+                userId: user.uid,
+                obtainedAt: Timestamp.fromDate(new Date()),
+              });
+              console.log('[ChallengeDetail] Logro "streak_7_days" otorgado!');
+              // Pequeño delay por si también salta el de primer desafío o la app se traba
+              setTimeout(() => {
+                useAchievementModalStore.getState().showAchievement(
+                  'Racha de 7 días',
+                  '¡Completaste 7 días seguidos de desafíos!'
+                );
+              }, 500);
+            }
           }
         }
       } catch (achErr) {
@@ -383,9 +449,11 @@ export default function ChallengeDetailScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <Pressable style={styles.backButton} onPress={handleGoBack}>
-        <Ionicons name="chevron-back" size={24} color="#282828" />
-      </Pressable>
+      {status !== 'completed' && (
+        <Pressable style={styles.backButton} onPress={handleGoBack}>
+          <Ionicons name="chevron-back" size={24} color="#282828" />
+        </Pressable>
+      )}
       {loadingChallenge ? (
         <View style={styles.centerContent}>
           <ActivityIndicator color={PRIMARY} />
@@ -456,6 +524,11 @@ export default function ChallengeDetailScreen() {
               >
                 <Text style={styles.primaryLabel}>Escribir reflexión</Text>
               </Pressable>
+
+              <Pressable style={styles.linkButton} onPress={() => router.replace('/(main)/home')}>
+                <Text style={styles.linkLabel}>Volver al Inicio</Text>
+              </Pressable>
+
               {savingSession && <Text style={styles.helperText}>Guardando tu desafío...</Text>}
             </>
           )}

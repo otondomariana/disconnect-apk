@@ -28,8 +28,8 @@ import { useAuthStore } from '@/stores/auth';
 
 const PRIMARY = '#039EA2';
 const FEED_LIMIT = 8;
-const CACHE_KEY = '@community_daily_feed';
-const CACHE_DATE_KEY = '@community_daily_date';
+const CACHE_KEY = '@community_daily_feed_v2';
+const CACHE_DATE_KEY = '@community_daily_date_v2';
 
 type ReflectionCard = {
     id: string;
@@ -71,11 +71,13 @@ export default function CommunityScreen() {
                         const cachedData = await AsyncStorage.getItem(CACHE_KEY);
                         if (cachedData) {
                             const parsed = JSON.parse(cachedData) as ReflectionCard[];
-                            if (!cancelled) {
-                                setReflections(parsed);
-                                setLoading(false);
+                            if (parsed.length > 0) {
+                                if (!cancelled) {
+                                    setReflections(parsed);
+                                    setLoading(false);
+                                }
+                                return;
                             }
-                            return;
                         }
                     }
                 } catch (e) {
@@ -189,11 +191,13 @@ export default function CommunityScreen() {
                 if (!cancelled) {
                     setReflections(cards);
                     // Guardar en caché para que el resto del día muestre las mismas 8
-                    try {
-                        await AsyncStorage.setItem(CACHE_DATE_KEY, todayStr);
-                        await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(cards));
-                    } catch (e) {
-                        console.warn('[Community] Error guardando caché', e);
+                    if (cards.length > 0) {
+                        try {
+                            await AsyncStorage.setItem(CACHE_DATE_KEY, todayStr);
+                            await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(cards));
+                        } catch (e) {
+                            console.warn('[Community] Error guardando caché', e);
+                        }
                     }
                 }
             } catch (e) {
@@ -254,11 +258,15 @@ export default function CommunityScreen() {
                     renderItem={({ item }) => (
                         <View style={styles.card}>
                             <View style={styles.cardHeader}>
+                                <Ionicons name="flag" size={16} color={PRIMARY} style={{ marginTop: 2 }} />
                                 <Text style={styles.cardChallengeTitle}>
                                     {item.challengeTitle}
                                 </Text>
                             </View>
-                            <Text style={styles.cardText}>{item.text}</Text>
+                            <View style={styles.cardTextRow}>
+                                <Ionicons name="chatbubbles-outline" size={16} color="#B0B0B0" style={{ marginTop: 4 }} />
+                                <Text style={styles.cardText}>{item.text}</Text>
+                            </View>
                             <View style={styles.cardFooter}>
                                 <Ionicons name="person-outline" size={13} color="#B0B0B0" />
                                 <Text style={styles.cardAnonymous}>
@@ -368,16 +376,23 @@ const styles = StyleSheet.create({
     cardHeader: {
         flexDirection: 'row',
         alignItems: 'flex-start',
+        gap: 8,
         marginBottom: 4,
     },
     cardChallengeTitle: {
+        flex: 1,
         fontSize: 16,
         fontFamily: 'PlusJakartaSans-Bold',
         color: PRIMARY,
-        flexShrink: 1,
         lineHeight: 22,
     },
+    cardTextRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: 8,
+    },
     cardText: {
+        flex: 1,
         fontSize: 15,
         fontFamily: 'PlusJakartaSans-Regular',
         color: '#1F2933',

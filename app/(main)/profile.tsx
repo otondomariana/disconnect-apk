@@ -21,7 +21,7 @@ export default function ProfileScreen() {
   const user = useAuthStore((s) => s.user);
   const [displayName, setDisplayName] = useState<string>('');
   const [signingOut, setSigningOut] = useState<boolean>(false);
-  const [stats, setStats] = useState({ challenges: 0, achievements: 0, streak: 0 });
+  const [stats, setStats] = useState({ challenges: 0, achievements: 0, reflections: 0 });
   const [loadingStats, setLoadingStats] = useState<boolean>(true);
 
   useFocusEffect(
@@ -37,13 +37,20 @@ export default function ProfileScreen() {
           const snap = await getDocs(query(collection(db, 'challengeSessions'), where('userId', '==', user.uid)));
           let totalChallenges = 0;
           let totalAchievements = 0;
-          const days = new Set<string>();
+          let totalReflections = 0;
 
           try {
             const achievementsSnap = await getDocs(query(collection(db, 'userAchievements'), where('userId', '==', user.uid)));
             totalAchievements = achievementsSnap.size;
           } catch (e) {
             console.error('[Profile] Error loading user achievements', e);
+          }
+
+          try {
+            const reflectionsSnap = await getDocs(query(collection(db, 'reflections'), where('userId', '==', user.uid)));
+            totalReflections = reflectionsSnap.size;
+          } catch (e) {
+            console.error('[Profile] Error loading user reflections', e);
           }
 
           // Convertimos a array para usar for...of con await
@@ -54,57 +61,13 @@ export default function ProfileScreen() {
             if (data.completed === false) continue;
 
             totalChallenges += 1;
-
-            if (data.finishedAt?.seconds) {
-              const d = new Date(data.finishedAt.seconds * 1000);
-              const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-              days.add(dateStr);
-            }
-          }
-
-          // Calculamos racha simple
-          let currentStreak = 0;
-          const sortedDays = Array.from(days).sort((a, b) => b.localeCompare(a));
-          if (sortedDays.length > 0) {
-            const today = new Date();
-            const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-
-            const yesterday = new Date(today);
-            yesterday.setDate(yesterday.getDate() - 1);
-            const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
-
-            let checkStr = todayStr;
-            if (sortedDays[0] === todayStr) {
-              currentStreak = 1;
-            } else if (sortedDays[0] === yesterdayStr) {
-              currentStreak = 1;
-              checkStr = yesterdayStr;
-            } else {
-              // Racha se perdió
-              currentStreak = 0;
-            }
-
-            if (currentStreak > 0) {
-              for (let i = 1; i < sortedDays.length; i++) {
-                const prevDate = new Date(`${checkStr}T00:00:00`);
-                prevDate.setDate(prevDate.getDate() - 1);
-                const prevStr = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}-${String(prevDate.getDate()).padStart(2, '0')}`;
-
-                if (sortedDays[i] === prevStr) {
-                  currentStreak++;
-                  checkStr = prevStr;
-                } else {
-                  break;
-                }
-              }
-            }
           }
 
           if (active) {
             setStats({
               challenges: totalChallenges,
               achievements: totalAchievements,
-              streak: currentStreak,
+              reflections: totalReflections,
             });
           }
         } catch (error) {
@@ -212,15 +175,18 @@ export default function ProfileScreen() {
         </View>
 
         <View style={styles.statsSection}>
-          <View style={styles.statCard}>
-            <Ionicons name="flame" size={24} color="#FF9800" />
+          <Pressable
+            style={({ pressed }) => [styles.statCard, pressed && { opacity: 0.7 }]}
+            onPress={() => router.push('/my-reflections')}
+          >
+            <Ionicons name="document-text" size={24} color="#039EA2" />
             {loadingStats ? (
               <ActivityIndicator color="#039EA2" size="small" style={{ marginTop: 8 }} />
             ) : (
-              <Text style={styles.statValue}>{stats.streak}</Text>
+              <Text style={styles.statValue}>{stats.reflections}</Text>
             )}
-            <Text style={styles.statLabel}>Racha</Text>
-          </View>
+            <Text style={styles.statLabel}>Reflexiones</Text>
+          </Pressable>
           <Pressable
             style={({ pressed }) => [styles.statCard, pressed && { opacity: 0.7 }]}
             onPress={() => router.push('/completed-challenges')}

@@ -11,11 +11,13 @@ import {
     query,
     where,
 } from 'firebase/firestore';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     FlatList,
     Pressable,
+    RefreshControl,
+    ScrollView,
     StyleSheet,
     Text,
     View,
@@ -53,18 +55,18 @@ export default function CommunityScreen() {
 
     const [reflections, setReflections] = useState<ReflectionCard[]>([]);
     const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     // Cargar el feed de reflexiones
-    useEffect(() => {
-        let cancelled = false;
-        const loadFeed = async () => {
-            setLoading(true);
-            setError(null);
-            try {
-                const todayStr = new Date().toISOString().split('T')[0];
+    const fetchFeed = useCallback(async (forceRefresh = false) => {
+        if (!forceRefresh) setLoading(true);
+        setError(null);
+        try {
+            const todayStr = new Date().toISOString().split('T')[0];
 
-                // 1. Intentar cargar desde el caché local
+            // 1. Intentar cargar desde el caché local
+            if (!forceRefresh) {
                 try {
                     const cachedDate = await AsyncStorage.getItem(CACHE_DATE_KEY);
                     if (cachedDate === todayStr) {
@@ -72,10 +74,8 @@ export default function CommunityScreen() {
                         if (cachedData) {
                             const parsed = JSON.parse(cachedData) as ReflectionCard[];
                             if (parsed.length > 0) {
-                                if (!cancelled) {
-                                    setReflections(parsed);
-                                    setLoading(false);
-                                }
+                                setReflections(parsed);
+                                setLoading(false);
                                 return;
                             }
                         }
@@ -83,134 +83,139 @@ export default function CommunityScreen() {
                 } catch (e) {
                     console.warn('[Community] Error leyendo caché', e);
                 }
-
-                // 2. Si no hay caché de hoy, buscar en Firestore
-                // Solicitamos un pool de reflexiones (ej. las 300 más recientes) para luego elegir 8 al azar
-                const baseQuery = query(
-                    collection(db, 'reflections'),
-                    where('isPublic', '==', true),
-                    where('active', '==', true),
-                    orderBy('createdAt', 'desc'),
-                    limit(300)
-                );
-
-                const snap = await getDocs(baseQuery);
-
-                // Filtrar reflexiones válidas (que no sean del usuario actual y tengan texto)
-                const validDocs = snap.docs.filter((docSnap) => {
-                    const data = docSnap.data() as { text?: string; userId?: string };
-                    if (data.userId && data.userId === user?.uid) return false;
-                    const text = data.text?.toString().trim() ?? '';
-                    if (!text) return false;
-                    return true;
-                });
-
-                // Mezclar (Shuffle) y tomar hasta 8
-                const shuffledDocs = validDocs.sort(() => 0.5 - Math.random());
-                const pickedDocs = shuffledDocs.slice(0, FEED_LIMIT);
-
-                const cards: ReflectionCard[] = [];
-                const sessionCache = new Map<string, string>();
-                const challengeCache = new Map<string, ChallengeOption>();
-                const userCache = new Map<string, string | null>();
-
-                for (const docSnap of pickedDocs) {
-                    const data = docSnap.data() as {
-                        text?: string;
-                        userId?: string;
-                        sessionId?: string;
-                        isAnonymous?: boolean;
-                    };
-
-                    const text = data.text?.toString().trim() ?? '';
-                    let challengeId = '';
-                    let challengeTitle = 'Desafío';
-                    let challengeCategory: CategoryKey | undefined;
-
-                    // Resolver info del desafío
-                    if (data.sessionId) {
-                        if (!sessionCache.has(data.sessionId)) {
-                            try {
-                                const sSnap = await getDoc(doc(db, 'challengeSessions', data.sessionId));
-                                sessionCache.set(data.sessionId, (sSnap.data() as any)?.challengeId ?? '');
-                            } catch {
-                                sessionCache.set(data.sessionId, '');
-                            }
-                        }
-                        challengeId = sessionCache.get(data.sessionId) ?? '';
-
-                        if (challengeId) {
-                            if (!challengeCache.has(challengeId)) {
-                                try {
-                                    const cSnap = await getDoc(doc(db, 'challenges', challengeId));
-                                    const cData = cSnap.data() as { title?: string; category?: string } | undefined;
-                                    const cat = normalizeCategoryKey((cData?.category ?? '').toString());
-                                    challengeCache.set(challengeId, {
-                                        id: challengeId,
-                                        title: cData?.title?.toString().trim() ?? 'Desafío',
-                                        category: cat,
-                                    });
-                                } catch {
-                                    challengeCache.set(challengeId, { id: challengeId, title: 'Desafío' });
-                                }
-                            }
-                            const ch = challengeCache.get(challengeId)!;
-                            challengeTitle = ch.title;
-                            challengeCategory = ch.category;
-                        }
-                    }
-
-                    // Resolver info del autor
-                    const isAnonymous = data.isAnonymous !== false;
-                    let authorName: string | undefined;
-
-                    if (!isAnonymous && data.userId) {
-                        if (!userCache.has(data.userId)) {
-                            try {
-                                const uSnap = await getDoc(doc(db, 'users', data.userId));
-                                const displayName = (uSnap.data() as { displayName?: string } | undefined)?.displayName ?? null;
-                                userCache.set(data.userId, displayName);
-                            } catch {
-                                userCache.set(data.userId, null);
-                            }
-                        }
-                        authorName = userCache.get(data.userId) ?? undefined;
-                    }
-
-                    cards.push({
-                        id: docSnap.id,
-                        text,
-                        challengeTitle,
-                        challengeId,
-                        challengeCategory,
-                        isAnonymous,
-                        authorName,
-                    });
-                }
-
-                if (!cancelled) {
-                    setReflections(cards);
-                    // Guardar en caché para que el resto del día muestre las mismas 8
-                    if (cards.length > 0) {
-                        try {
-                            await AsyncStorage.setItem(CACHE_DATE_KEY, todayStr);
-                            await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(cards));
-                        } catch (e) {
-                            console.warn('[Community] Error guardando caché', e);
-                        }
-                    }
-                }
-            } catch (e) {
-                console.error('[Community] Error cargando el feed.', e);
-                if (!cancelled) setError('No pudimos cargar las reflexiones. Intenta nuevamente.');
-            } finally {
-                if (!cancelled) setLoading(false);
             }
-        };
 
-        loadFeed();
-        return () => { cancelled = true; };
+            // 2. Si no hay caché de hoy, buscar en Firestore
+            // Solicitamos un pool de reflexiones (ej. las 300 más recientes) para luego elegir 8 al azar
+            const baseQuery = query(
+                collection(db, 'reflections'),
+                where('isPublic', '==', true),
+                where('active', '==', true),
+                orderBy('createdAt', 'desc'),
+                limit(300)
+            );
+
+            const snap = await getDocs(baseQuery);
+
+            // Filtrar reflexiones válidas (que no sean del usuario actual y tengan texto)
+            const validDocs = snap.docs.filter((docSnap) => {
+                const data = docSnap.data() as { text?: string; userId?: string };
+                if (data.userId && data.userId === user?.uid) return false;
+                const text = data.text?.toString().trim() ?? '';
+                if (!text) return false;
+                return true;
+            });
+
+            // Mezclar (Shuffle) y tomar hasta 8
+            const shuffledDocs = validDocs.sort(() => 0.5 - Math.random());
+            const pickedDocs = shuffledDocs.slice(0, FEED_LIMIT);
+
+            const cards: ReflectionCard[] = [];
+            const sessionCache = new Map<string, string>();
+            const challengeCache = new Map<string, ChallengeOption>();
+            const userCache = new Map<string, string | null>();
+
+            for (const docSnap of pickedDocs) {
+                const data = docSnap.data() as {
+                    text?: string;
+                    userId?: string;
+                    sessionId?: string;
+                    isAnonymous?: boolean;
+                };
+
+                const text = data.text?.toString().trim() ?? '';
+                let challengeId = '';
+                let challengeTitle = 'Desafío';
+                let challengeCategory: CategoryKey | undefined;
+
+                // Resolver info del desafío
+                if (data.sessionId) {
+                    if (!sessionCache.has(data.sessionId)) {
+                        try {
+                            const sSnap = await getDoc(doc(db, 'challengeSessions', data.sessionId));
+                            sessionCache.set(data.sessionId, (sSnap.data() as any)?.challengeId ?? '');
+                        } catch {
+                            sessionCache.set(data.sessionId, '');
+                        }
+                    }
+                    challengeId = sessionCache.get(data.sessionId) ?? '';
+
+                    if (challengeId) {
+                        if (!challengeCache.has(challengeId)) {
+                            try {
+                                const cSnap = await getDoc(doc(db, 'challenges', challengeId));
+                                const cData = cSnap.data() as { title?: string; category?: string } | undefined;
+                                const cat = normalizeCategoryKey((cData?.category ?? '').toString());
+                                challengeCache.set(challengeId, {
+                                    id: challengeId,
+                                    title: cData?.title?.toString().trim() ?? 'Desafío',
+                                    category: cat,
+                                });
+                            } catch {
+                                challengeCache.set(challengeId, { id: challengeId, title: 'Desafío' });
+                            }
+                        }
+                        const ch = challengeCache.get(challengeId)!;
+                        challengeTitle = ch.title;
+                        challengeCategory = ch.category;
+                    }
+                }
+
+                // Resolver info del autor
+                const isAnonymous = data.isAnonymous !== false;
+                let authorName: string | undefined;
+
+                if (!isAnonymous && data.userId) {
+                    if (!userCache.has(data.userId)) {
+                        try {
+                            const uSnap = await getDoc(doc(db, 'users', data.userId));
+                            const displayName = (uSnap.data() as { displayName?: string } | undefined)?.displayName ?? null;
+                            userCache.set(data.userId, displayName);
+                        } catch {
+                            userCache.set(data.userId, null);
+                        }
+                    }
+                    authorName = userCache.get(data.userId) ?? undefined;
+                }
+
+                cards.push({
+                    id: docSnap.id,
+                    text,
+                    challengeTitle,
+                    challengeId,
+                    challengeCategory,
+                    isAnonymous,
+                    authorName,
+                });
+            }
+
+            setReflections(cards);
+            // Guardar en caché para que el resto del día muestre las mismas 8
+            if (cards.length > 0) {
+                try {
+                    await AsyncStorage.setItem(CACHE_DATE_KEY, todayStr);
+                    await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(cards));
+                } catch (e) {
+                    console.warn('[Community] Error guardando caché', e);
+                }
+            }
+        } catch (e) {
+            console.error('[Community] Error cargando el feed.', e);
+            setError('No pudimos cargar las reflexiones. Intenta nuevamente.');
+        } finally {
+            if (!forceRefresh) setLoading(false);
+        }
     }, [user?.uid]);
+
+    useEffect(() => {
+        fetchFeed(false);
+    }, [fetchFeed]);
+
+    const onRefresh = useCallback(async () => {
+        setRefreshing(true);
+        await fetchFeed(true);
+        setRefreshing(false);
+    }, [fetchFeed]);
 
     const handleGoBack = () => {
         if (router.canGoBack()) router.back();
@@ -240,7 +245,12 @@ export default function CommunityScreen() {
                     <Text style={styles.errorText}>{error}</Text>
                 </View>
             ) : reflections.length === 0 ? (
-                <View style={styles.centered}>
+                <ScrollView
+                    contentContainerStyle={[styles.centered, { flexGrow: 1 }]}
+                    refreshControl={
+                        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[PRIMARY]} tintColor={PRIMARY} />
+                    }
+                >
                     <Ionicons name="chatbubbles-outline" size={64} color="#C4C4C4" />
                     <Text style={styles.emptyTitle}>
                         Aún no hay reflexiones compartidas.
@@ -248,13 +258,16 @@ export default function CommunityScreen() {
                     <Text style={styles.emptySubtitle}>
                         Completá un desafío y compartí tu reflexión.
                     </Text>
-                </View>
+                </ScrollView>
             ) : (
                 <FlatList
                     data={reflections}
                     keyExtractor={(item) => item.id}
                     contentContainerStyle={styles.feedList}
                     showsVerticalScrollIndicator={false}
+                    refreshControl={
+                        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[PRIMARY]} tintColor={PRIMARY} />
+                    }
                     renderItem={({ item }) => (
                         <View style={styles.card}>
                             <View style={styles.cardHeader}>
